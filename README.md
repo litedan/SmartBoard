@@ -1,5 +1,4 @@
-# SmartBoard skeleton
-
+# SmartBoard 
 ## Backend
 - FastAPI app: `backend/app/main.py`
 - API modules: `backend/app/api/v1/endpoints`
