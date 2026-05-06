@@ -1,6 +1,14 @@
+<<<<<<< HEAD
 # SmartBoard
 
 SmartBoard - веб-приложение с разделением на `frontend` (React + Vite + TypeScript) и `backend` (FastAPI + SQLAlchemy + PostgreSQL).
+=======
+# SmartBoard 
+## Backend
+- FastAPI app: `backend/app/main.py`
+- API modules: `backend/app/api/v1/endpoints`
+- Layers: `schemas`, `models`, `repositories`, `services`
+>>>>>>> daa98ad125a046fba65b332c7ee16d04c86329f9
 
 Этот README предназначен для командной разработки: быстрый онбординг, единые правила работы и понятный процесс поставки изменений.
 
