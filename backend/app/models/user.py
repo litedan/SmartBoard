@@ -25,3 +25,4 @@ class User(Base):
 
     listings = relationship("Listing", back_populates="user", cascade="all, delete-orphan")
     favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
