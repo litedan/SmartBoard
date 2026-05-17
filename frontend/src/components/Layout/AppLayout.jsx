@@ -1,10 +1,22 @@
-import { Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 
 export function AppLayout() {
   return (
-    <main>
-      <h1>SmartBoard</h1>
-      <Outlet />
-    </main>
+    <div className="app-shell">
+      <header className="app-shell__header">
+        <div className="app-shell__brand">SmartBoard</div>
+        <nav className="app-shell__nav">
+          <NavLink to="/" end>
+            Главная
+          </NavLink>
+          <NavLink to="/profile">Кабинет</NavLink>
+          <NavLink to="/login">Вход</NavLink>
+          <NavLink to="/register">Регистрация</NavLink>
+        </nav>
+      </header>
+      <main className="app-shell__content">
+        <Outlet />
+      </main>
+    </div>
   );
 }

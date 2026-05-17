@@ -30,8 +30,9 @@ function getErrorMessage(payload) {
 export async function apiRequest(endpoint, init = {}) {
   const headers = new Headers(init.headers);
   const hasBody = init.body !== undefined && init.body !== null;
+  const isFormDataBody = typeof FormData !== "undefined" && init.body instanceof FormData;
 
-  if (hasBody && !headers.has("Content-Type")) {
+  if (hasBody && !isFormDataBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

@@ -1,0 +1,157 @@
+.profile-page {
+  width: min(1000px, 100%);
+  margin: 24px auto 48px;
+  padding: 0 16px;
+  display: grid;
+  gap: 16px;
+}
+
+.profile-card {
+  background: #ffffff;
+  border: 1px solid #dbe3ef;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.08);
+}
+
+.profile-head {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+
+.profile-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.profile-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+}
+
+.profile-avatar-fallback {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.profile-head-meta h2 {
+  margin: 0 0 4px;
+  color: #0f172a;
+}
+
+.profile-head-meta p {
+  margin: 0 0 12px;
+  color: #475569;
+}
+
+.profile-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #bfd2ff;
+  background: #ecf3ff;
+  color: #1e3a8a;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-upload-button input {
+  display: none;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.profile-card h3 {
+  margin: 0 0 12px;
+  color: #0f172a;
+}
+
+.profile-form {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-form label {
+  display: grid;
+  gap: 5px;
+  color: #334155;
+  font-size: 14px;
+}
+
+.profile-form input {
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+
+.profile-form input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.profile-form button,
+.profile-logout {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #2563eb;
+  cursor: pointer;
+}
+
+.profile-form button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.profile-feedback {
+  margin: 0;
+  font-size: 14px;
+}
+
+.profile-error {
+  color: #b91c1c;
+}
+
+.profile-success {
+  color: #166534;
+}
+
+.profile-logout {
+  justify-self: start;
+  background: #ef4444;
+}
+
+.profile-status {
+  margin: 0;
+  color: #334155;
+}
+
+@media (max-width: 860px) {
+  .profile-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
