@@ -1,9 +1,10 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import ads, auth, events, profile, recommendations, search
+from app.api.v1.endpoints import admin, ads, auth, events, profile, recommendations, search
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
+api_router.include_router(admin.router)
 api_router.include_router(ads.router)
 api_router.include_router(profile.router)
 api_router.include_router(recommendations.router)

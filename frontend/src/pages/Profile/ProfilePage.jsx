@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
+import { deleteAd, fetchMyAds, fetchMyFavorites, removeFavorite, updateAd } from "../../shared/api/ads";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./profile.css";
 
@@ -18,13 +19,27 @@ function getAvatarSrc(avatarUrl) {
   return avatarUrl;
 }
 
+function formatPrice(value) {
+  if (value === null || value === undefined) {
+    return "Цена не указана";
+  }
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return "Цена не указана";
+  }
+  return `${new Intl.NumberFormat("ru-RU").format(amount)} ₽`;
+}
+
 export function ProfilePage() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isManagingListings, setIsManagingListings] = useState(false);
   const [profile, setProfile] = useState(EMPTY_PROFILE);
+  const [myListings, setMyListings] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
@@ -53,17 +68,23 @@ export function ProfilePage() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await apiRequest("/profile/me");
+        const [profileResponse, listingsResponse, favoritesResponse] = await Promise.all([
+          apiRequest("/profile/me"),
+          fetchMyAds({ limit: 100, offset: 0 }),
+          fetchMyFavorites({ limit: 100, offset: 0 }),
+        ]);
         if (!mounted) {
           return;
         }
         setProfile({
-          name: response.name ?? "",
-          lastName: response.last_name ?? "",
-          email: response.email ?? "",
-          phone: response.phone ?? "",
+          name: profileResponse.name ?? "",
+          lastName: profileResponse.last_name ?? "",
+          email: profileResponse.email ?? "",
+          phone: profileResponse.phone ?? "",
         });
-        setAvatarUrl(getAvatarSrc(response.avatar_url));
+        setAvatarUrl(getAvatarSrc(profileResponse.avatar_url));
+        setMyListings(listingsResponse?.items ?? []);
+        setFavorites(favoritesResponse?.items ?? []);
       } catch (requestError) {
         if (!mounted) {
           return;
@@ -98,6 +119,15 @@ export function ProfilePage() {
     setPasswordForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  async function refreshListingsAndFavorites() {
+    const [listingsResponse, favoritesResponse] = await Promise.all([
+      fetchMyAds({ limit: 100, offset: 0 }),
+      fetchMyFavorites({ limit: 100, offset: 0 }),
+    ]);
+    setMyListings(listingsResponse?.items ?? []);
+    setFavorites(favoritesResponse?.items ?? []);
+  }
+
   async function handleProfileSubmit(event) {
     event.preventDefault();
     setError(null);
@@ -129,11 +159,7 @@ export function ProfilePage() {
       });
       setSuccess("Профиль обновлён");
     } catch (requestError) {
-      if (requestError instanceof ApiError) {
-        setError(requestError.message);
-      } else {
-        setError("Не удалось сохранить профиль");
-      }
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось сохранить профиль");
     } finally {
       setIsSavingProfile(false);
     }
@@ -166,18 +192,10 @@ export function ProfilePage() {
           new_password: passwordForm.newPassword,
         }),
       });
-      setPasswordForm({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setSuccess("Пароль успешно изменён");
     } catch (requestError) {
-      if (requestError instanceof ApiError) {
-        setError(requestError.message);
-      } else {
-        setError("Не удалось изменить пароль");
-      }
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось изменить пароль");
     } finally {
       setIsSavingPassword(false);
     }
@@ -209,13 +227,58 @@ export function ProfilePage() {
       setAvatarUrl(getAvatarSrc(response.avatar_url));
       setSuccess("Фото профиля обновлено");
     } catch (requestError) {
-      if (requestError instanceof ApiError) {
-        setError(requestError.message);
-      } else {
-        setError("Не удалось загрузить фото");
-      }
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить фото");
     } finally {
       setIsUploadingAvatar(false);
+    }
+  }
+
+  async function handleListingToggle(listing) {
+    setIsManagingListings(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await updateAd(listing.id, { is_active: !listing.is_active });
+      await refreshListingsAndFavorites();
+      setSuccess("Статус объявления обновлён");
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось обновить статус");
+    } finally {
+      setIsManagingListings(false);
+    }
+  }
+
+  async function handleListingDelete(listingId) {
+    if (!window.confirm("Удалить объявление?")) {
+      return;
+    }
+
+    setIsManagingListings(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await deleteAd(listingId);
+      await refreshListingsAndFavorites();
+      setSuccess("Объявление удалено");
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось удалить объявление");
+    } finally {
+      setIsManagingListings(false);
+    }
+  }
+
+  async function handleRemoveFavorite(listingId) {
+    setIsManagingListings(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await removeFavorite(listingId);
+      await refreshListingsAndFavorites();
+      setSuccess("Удалено из избранного");
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось удалить из избранного");
+    } finally {
+      setIsManagingListings(false);
     }
   }
 
@@ -237,6 +300,10 @@ export function ProfilePage() {
 
   return (
     <section className="profile-page">
+      <button type="button" className="profile-back" onClick={() => navigate(-1)}>
+        Назад
+      </button>
+
       <div className="profile-card profile-head">
         <div className="profile-avatar-wrap">
           {avatarUrl ? (
@@ -247,7 +314,7 @@ export function ProfilePage() {
         </div>
         <div className="profile-head-meta">
           <h2>Личный кабинет</h2>
-          <p>Управляйте данными аккаунта и безопасностью профиля.</p>
+          <p>Управляйте данными аккаунта, объявлениями и избранным.</p>
           <label className="profile-upload-button">
             {isUploadingAvatar ? "Загружаем..." : "Загрузить фото"}
             <input
@@ -259,6 +326,56 @@ export function ProfilePage() {
           </label>
         </div>
       </div>
+
+      <section className="profile-card">
+        <h3>Мои объявления</h3>
+        <div className="profile-listings">
+          {myListings.map((listing) => (
+            <article key={listing.id} className="profile-listings__item">
+              <div>
+                <h4>
+                  <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
+                </h4>
+                <p>{formatPrice(listing.price)}</p>
+                <small>{listing.is_active ? "Активно" : "Снято с публикации"}</small>
+              </div>
+              <div className="profile-listings__actions">
+                <Link to={`/ads/${listing.id}/edit`}>Редактировать</Link>
+                <button type="button" onClick={() => handleListingToggle(listing)} disabled={isManagingListings}>
+                  {listing.is_active ? "Снять" : "Опубликовать"}
+                </button>
+                <button type="button" onClick={() => handleListingDelete(listing.id)} disabled={isManagingListings}>
+                  Удалить
+                </button>
+              </div>
+            </article>
+          ))}
+          {myListings.length === 0 ? <p className="profile-status">У вас пока нет объявлений.</p> : null}
+        </div>
+      </section>
+
+      <section className="profile-card">
+        <h3>Избранное</h3>
+        <div className="profile-listings">
+          {favorites.map((listing) => (
+            <article key={listing.id} className="profile-listings__item">
+              <div>
+                <h4>
+                  <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
+                </h4>
+                <p>{formatPrice(listing.price)}</p>
+                <small>{listing.author_name ?? "Пользователь"}</small>
+              </div>
+              <div className="profile-listings__actions">
+                <button type="button" onClick={() => handleRemoveFavorite(listing.id)} disabled={isManagingListings}>
+                  Убрать из избранного
+                </button>
+              </div>
+            </article>
+          ))}
+          {favorites.length === 0 ? <p className="profile-status">Вы ещё не добавляли объявления в избранное.</p> : null}
+        </div>
+      </section>
 
       <div className="profile-grid">
         <article className="profile-card">

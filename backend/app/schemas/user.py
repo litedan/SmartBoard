@@ -86,3 +86,19 @@ class UserRead(BaseModel):
     role: str
     avatar_url: str | None
     created_at: datetime
+
+
+class UserPublicRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    last_name: str
+    phone: str | None
+    avatar_url: str | None
+    created_at: datetime
+
+
+class UserPublicProfileResponse(BaseModel):
+    user: UserPublicRead
+    active_listings_total: int

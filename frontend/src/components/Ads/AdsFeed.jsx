@@ -1,90 +1,176 @@
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
-const ADS = [
-  {
-    id: 101,
-    title: "MacBook Air M2 16/512, идеальное состояние",
-    price: "98 000 ₽",
-    location: "Москва, Таганский",
-    category: "Техника",
-    badge: "Проверено",
-    published: "Сегодня, 09:20",
-  },
-  {
-    id: 102,
-    title: "Диван-кровать сканди, новый текстиль",
-    price: "28 500 ₽",
-    location: "Казань, Вахитовский",
-    category: "Для дома",
-    badge: "Срочно",
-    published: "Сегодня, 11:05",
-  },
-  {
-    id: 103,
-    title: "Репетитор по английскому для взрослых",
-    price: "1 700 ₽ / час",
-    location: "Онлайн",
-    category: "Услуги",
-    badge: "Топ",
-    published: "Вчера, 20:11",
-  },
-  {
-    id: 104,
-    title: "Аренда фотоаппарата Sony A7 IV",
-    price: "3 000 ₽ / день",
-    location: "Санкт-Петербург, Петроградский",
-    category: "Техника",
-    badge: "Новый",
-    published: "Сегодня, 13:42",
-  },
-  {
-    id: 105,
-    title: "Установка кондиционеров под ключ",
-    price: "от 6 500 ₽",
-    location: "Екатеринбург",
-    category: "Услуги",
-    badge: "Рекомендация",
-    published: "Сегодня, 08:55",
-  },
-  {
-    id: 106,
-    title: "Студия 25 м² у метро, долгосрочно",
-    price: "56 000 ₽ / мес",
-    location: "Москва, Савеловский",
-    category: "Недвижимость",
-    badge: "Популярно",
-    published: "Вчера, 18:09",
-  },
-];
+import { addFavorite, fetchAds, removeFavorite } from "../../shared/api/ads";
+import { ApiError } from "../../shared/api/client";
 
-export function AdsFeed() {
+const PAGE_SIZE = 12;
+
+function formatPrice(value) {
+  if (value === null || value === undefined) {
+    return "Цена не указана";
+  }
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return "Цена не указана";
+  }
+  return `${new Intl.NumberFormat("ru-RU").format(amount)} ₽`;
+}
+
+function formatPublished(dateString) {
+  if (!dateString) {
+    return "Дата не указана";
+  }
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) {
+    return "Дата не указана";
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+export function AdsFeed({ filters }) {
+  const navigate = useNavigate();
+  const [ads, setAds] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState(null);
+  const [favoritePendingId, setFavoritePendingId] = useState(null);
+
+  const sentinelRef = useRef(null);
+
+  const hasMore = useMemo(() => ads.length < total, [ads.length, total]);
+
+  const loadAds = useCallback(
+    async ({ append, offset }) => {
+      const nextOffset = append ? offset ?? 0 : 0;
+      if (append) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
+      setError(null);
+      try {
+        const payload = await fetchAds({
+          limit: PAGE_SIZE,
+          offset: nextOffset,
+          query: filters?.query,
+          categoryId: filters?.categoryId,
+          priceMin: filters?.priceMin,
+          priceMax: filters?.priceMax,
+        });
+
+        const nextItems = payload?.items ?? [];
+        setTotal(payload?.meta?.total ?? 0);
+        setAds((prev) => (append ? [...prev, ...nextItems] : nextItems));
+      } catch (requestError) {
+        if (requestError instanceof ApiError) {
+          setError(requestError.message);
+        } else {
+          setError("Не удалось загрузить объявления");
+        }
+      } finally {
+        if (append) {
+          setIsLoadingMore(false);
+        } else {
+          setIsLoading(false);
+        }
+      }
+    },
+    [filters?.categoryId, filters?.priceMax, filters?.priceMin, filters?.query],
+  );
+
+  useEffect(() => {
+    loadAds({ append: false, offset: 0 });
+  }, [filters?.categoryId, filters?.priceMax, filters?.priceMin, filters?.query, loadAds]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || isLoading || isLoadingMore || !hasMore) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting) {
+          loadAds({ append: true, offset: ads.length });
+        }
+      },
+      { rootMargin: "240px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [ads.length, hasMore, isLoading, isLoadingMore, loadAds]);
+
+  async function toggleFavorite(ad) {
+    setFavoritePendingId(ad.id);
+    try {
+      if (ad.is_favorite) {
+        await removeFavorite(ad.id);
+        setAds((prev) => prev.map((item) => (item.id === ad.id ? { ...item, is_favorite: false } : item)));
+      } else {
+        await addFavorite(ad.id);
+        setAds((prev) => prev.map((item) => (item.id === ad.id ? { ...item, is_favorite: true } : item)));
+      }
+    } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        navigate("/login", { replace: true });
+        return;
+      }
+      setError(requestError instanceof ApiError ? requestError.message : "Не удалось обновить избранное");
+    } finally {
+      setFavoritePendingId(null);
+    }
+  }
+
   return (
     <section className="home-feed" aria-label="Лента объявлений">
       <div className="home-feed__head">
         <h2>Свежие объявления</h2>
-        <p>Подборка новых публикаций, которые сейчас набирают отклики.</p>
+        <p>Публикации из базы данных SmartBoard.</p>
       </div>
 
       <div className="home-feed__list">
-        {ADS.map((ad, index) => (
-          <article
-            className="home-ad-card"
-            key={ad.id}
-            style={{ animationDelay: `${index * 80}ms` }}
-          >
-            <div className="home-ad-card__meta">
-              <span>{ad.category}</span>
-              <span className="home-ad-card__badge">{ad.badge}</span>
-            </div>
-            <h3>
-              <Link to={`/ads/${ad.id}`}>{ad.title}</Link>
-            </h3>
-            <p className="home-ad-card__price">{ad.price}</p>
-            <p className="home-ad-card__location">{ad.location}</p>
-            <p className="home-ad-card__published">{ad.published}</p>
-          </article>
-        ))}
+        {isLoading ? <p className="home-feed__status">Загружаем объявления...</p> : null}
+        {error ? <p className="home-feed__status home-feed__status--error">{error}</p> : null}
+        {!isLoading && !error && ads.length === 0 ? (
+          <p className="home-feed__status">По вашему фильтру ничего не найдено.</p>
+        ) : null}
+        {!isLoading && !error
+          ? ads.map((ad, index) => (
+              <article className="home-ad-card" key={ad.id} style={{ animationDelay: `${index * 40}ms` }}>
+                <div className="home-ad-card__meta">
+                  <span>{ad.category_name ?? "Без категории"}</span>
+                  <button
+                    type="button"
+                    className={`home-ad-card__fav ${ad.is_favorite ? "active" : ""}`}
+                    onClick={() => toggleFavorite(ad)}
+                    disabled={favoritePendingId === ad.id}
+                  >
+                    {ad.is_favorite ? "В избранном" : "В избранное"}
+                  </button>
+                </div>
+                <h3>
+                  <Link to={`/ads/${ad.id}`}>{ad.title}</Link>
+                </h3>
+                <p className="home-ad-card__price">{formatPrice(ad.price)}</p>
+                <p className="home-ad-card__location">{ad.author_name ?? "Пользователь SmartBoard"}</p>
+                <p className="home-ad-card__published">{formatPublished(ad.created_at)}</p>
+              </article>
+            ))
+          : null}
       </div>
+
+      {!isLoading && hasMore ? <div ref={sentinelRef} className="home-feed__sentinel" /> : null}
+      {isLoadingMore ? <p className="home-feed__status">Загружаем ещё...</p> : null}
     </section>
   );
 }

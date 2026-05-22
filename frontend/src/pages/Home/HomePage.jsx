@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 
 import "./home.css";
 
@@ -7,6 +8,13 @@ import { RecommendationsBlock } from "../../components/Recommendations/Recommend
 import { SearchFilters } from "../../components/Search/SearchFilters";
 
 export function HomePage() {
+  const [filters, setFilters] = useState({
+    query: "",
+    categoryId: "",
+    priceMin: "",
+    priceMax: "",
+  });
+
   const highlights = [
     { value: "12 500+", label: "активных объявлений" },
     { value: "1 800", label: "новых за неделю" },
@@ -54,10 +62,10 @@ export function HomePage() {
         </aside>
       </div>
 
-      <SearchFilters />
+      <SearchFilters value={filters} onApply={setFilters} />
 
       <div className="home-content-grid">
-        <AdsFeed />
+        <AdsFeed filters={filters} />
         <RecommendationsBlock />
       </div>
     </section>

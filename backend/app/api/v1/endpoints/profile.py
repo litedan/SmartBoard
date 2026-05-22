@@ -2,14 +2,16 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.auth import get_current_user_from_session
 from app.core.security import hash_password, verify_password
 from app.db.session import get_db
+from app.models.listing import Listing
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserProfileUpdate, UserRead
+from app.schemas.user import UserProfileUpdate, UserPublicProfileResponse, UserPublicRead, UserRead
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -35,6 +37,24 @@ def _extract_old_avatar_path(avatar_url: str | None) -> Path | None:
 @router.get("/me", response_model=UserRead)
 async def get_my_profile(current_user: User = Depends(get_current_user_from_session)):
     return UserRead.model_validate(current_user)
+
+
+@router.get("/users/{user_id}", response_model=UserPublicProfileResponse)
+async def get_public_profile(user_id: int, db: AsyncSession = Depends(get_db)):
+    user = await UserRepository.get_by_id(session=db, obj_id=user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    total = await db.scalar(
+        select(func.count()).select_from(Listing).where(
+            Listing.user_id == user_id,
+            Listing.is_active.is_(True),
+        )
+    )
+    return UserPublicProfileResponse(
+        user=UserPublicRead.model_validate(user),
+        active_listings_total=total or 0,
+    )
 
 
 @router.patch("/me", response_model=UserRead)
