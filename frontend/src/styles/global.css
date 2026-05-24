@@ -3,11 +3,24 @@
   box-sizing: border-box;
 }
 
+:root {
+  --app-bg: #f6f8fb;
+  --app-bg-soft: #eef3f9;
+  --app-surface: #ffffff;
+  --app-border: #dbe4ef;
+  --app-text: #111827;
+  --app-muted: #5b6678;
+  --app-accent: #0f766e;
+  --app-accent-soft: #e2f5f3;
+}
+
 body {
   margin: 0;
-  font-family: "Manrope", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(180deg, #f2f6fd 0%, #eaf1fb 100%);
-  color: #0f172a;
+  font-family: Inter, Roboto, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 10% 0%, #ffffff 0%, transparent 36%),
+    linear-gradient(180deg, var(--app-bg) 0%, var(--app-bg-soft) 100%);
+  color: var(--app-text);
 }
 
 a {
@@ -33,16 +46,25 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #dbe5f3;
-  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--app-border);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(8px);
 }
 
 .app-shell__brand {
+  text-decoration: none;
   font-size: 20px;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  color: #163a5f;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #0f172a;
+  padding: 8px 10px;
+  border-radius: 10px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.app-shell__brand:hover {
+  background: #f2f6fb;
+  color: #0b5f58;
 }
 
 .app-shell__nav {
@@ -53,25 +75,27 @@ a {
 
 .app-shell__nav a {
   text-decoration: none;
-  color: #1e293b;
+  color: #1f2937;
   padding: 8px 11px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .app-shell__nav-button {
   border: 0;
-  background: #dc2626;
+  background: #e11d48;
   color: #ffffff;
   padding: 8px 11px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 14px;
   cursor: pointer;
 }
 
 .app-shell__nav a.active {
-  background: #ddedf8;
-  color: #0f4a82;
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
 
 .app-shell__content {
@@ -81,11 +105,49 @@ a {
 
 .app-shell__footer {
   margin-top: 20px;
-  border-top: 1px solid #dbe5f3;
+  border-top: 1px solid var(--app-border);
   background: rgba(255, 255, 255, 0.88);
   padding: 14px 18px;
-  color: #49617d;
+  color: var(--app-muted);
   font-size: 13px;
+}
+
+.app-breadcrumbs {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 14px 16px 0;
+}
+
+.app-breadcrumbs ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.app-breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-breadcrumbs li + li::before {
+  content: "/";
+  margin: 0 6px 0 2px;
+  color: #8a94a6;
+}
+
+.app-breadcrumbs a {
+  color: #35506f;
+  text-decoration: none;
+}
+
+.app-breadcrumbs a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 640px) {

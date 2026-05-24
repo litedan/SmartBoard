@@ -34,6 +34,13 @@ function formatPublished(dateString) {
   }).format(date);
 }
 
+function getImageAlt(ad) {
+  if (!ad?.title) {
+    return "Изображение объявления";
+  }
+  return `Фото: ${ad.title}`;
+}
+
 export function AdsFeed({ filters }) {
   const navigate = useNavigate();
   const [ads, setAds] = useState([]);
@@ -147,6 +154,15 @@ export function AdsFeed({ filters }) {
         {!isLoading && !error
           ? ads.map((ad, index) => (
               <article className="home-ad-card" key={ad.id} style={{ animationDelay: `${index * 40}ms` }}>
+                <Link to={`/ads/${ad.id}`} className="home-ad-card__image-wrap" aria-label={`Открыть ${ad.title}`}>
+                  {ad.image_url ? (
+                    <img src={ad.image_url} alt={getImageAlt(ad)} className="home-ad-card__image" loading="lazy" />
+                  ) : (
+                    <div className="home-ad-card__image-placeholder" aria-hidden="true">
+                      <span>Нет фото</span>
+                    </div>
+                  )}
+                </Link>
                 <div className="home-ad-card__meta">
                   <span>{ad.category_name ?? "Без категории"}</span>
                   <button

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { createAd, fetchAdById, fetchAdCategories, updateAd } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
 import "./ad.css";
@@ -10,6 +11,8 @@ const INITIAL_FORM = {
   description: "",
   price: "",
   categoryId: "",
+  quantityTotal: "1",
+  quantityAvailable: "1",
 };
 
 export function AdCreateEditPage() {
@@ -78,6 +81,8 @@ export function AdCreateEditPage() {
           description: payload.description ?? "",
           price: payload.price ?? "",
           categoryId: payload.category_id ? String(payload.category_id) : "",
+          quantityTotal: String(payload.quantity_total ?? 1),
+          quantityAvailable: String(payload.quantity_available ?? payload.quantity_total ?? 1),
         });
         setExistingImageUrl(payload.image_url ?? "");
         setIsActive(Boolean(payload.is_active));
@@ -137,12 +142,28 @@ export function AdCreateEditPage() {
       setError("Цена не может быть отрицательной");
       return;
     }
+    const quantityTotal = Number(form.quantityTotal);
+    const quantityAvailable = Number(form.quantityAvailable);
+    if (!Number.isInteger(quantityTotal) || quantityTotal < 1) {
+      setError("Общее количество должно быть целым числом не меньше 1");
+      return;
+    }
+    if (!Number.isInteger(quantityAvailable) || quantityAvailable < 0) {
+      setError("Остаток должен быть целым числом не меньше 0");
+      return;
+    }
+    if (quantityAvailable > quantityTotal) {
+      setError("Остаток не может быть больше общего количества");
+      return;
+    }
 
     const payload = {
       title,
       description,
       price: form.price ? Number(form.price) : null,
       category_id: form.categoryId ? Number(form.categoryId) : null,
+      quantity_total: quantityTotal,
+      quantity_available: quantityAvailable,
       image: imageFile,
       remove_image: removeImage,
       is_active: isEditMode ? isActive : undefined,
@@ -182,9 +203,27 @@ export function AdCreateEditPage() {
     );
   }
 
+  const breadcrumbs = [
+    { label: "Каталог", to: "/" },
+    ...(isEditMode && adId ? [{ label: form.title?.trim() || `Объявление #${adId}`, to: `/ads/${adId}` }] : []),
+    { label: isEditMode ? "Редактирование" : "Новое объявление" },
+  ];
+
+  const statusLabel = isActive
+    ? Number(form.quantityTotal) > 1
+      ? "В наличии"
+      : "Активно"
+    : Number(form.quantityTotal) > 1
+      ? Number(form.quantityAvailable) === 0
+        ? "Распродано"
+        : "Продажи остановлены"
+      : "Услуга оказана";
+
   return (
-    <section className="ad-page">
-      <article className="ad-card ad-card--form">
+    <>
+      <Breadcrumbs items={breadcrumbs} />
+      <section className="ad-page">
+        <article className="ad-card ad-card--form">
         <button type="button" className="ad-back-button" onClick={() => navigate(-1)}>
           <span aria-hidden="true">←</span>
           <span>Назад</span>
@@ -198,7 +237,7 @@ export function AdCreateEditPage() {
         <p className="ad-form__hint">{isEditMode ? "Измените нужные поля и сохраните." : "Заполните форму, и объявление появится в каталоге."}</p>
 
         <div className={`ad-status-chip ${isActive ? "ad-status-chip--active" : "ad-status-chip--inactive"}`}>
-          Статус: {isActive ? "Активно" : "Снято с публикации"}
+          Статус: {statusLabel}
         </div>
 
         <form className="ad-form" onSubmit={handleSubmit}>
@@ -252,6 +291,31 @@ export function AdCreateEditPage() {
                   </option>
                 ))}
               </select>
+            </label>
+          </div>
+
+          <div className="ad-form__row">
+            <label>
+              Всего единиц
+              <input
+                type="number"
+                value={form.quantityTotal}
+                onChange={(event) => updateField("quantityTotal", event.target.value)}
+                min={1}
+                step={1}
+                required
+              />
+            </label>
+            <label>
+              Остаток
+              <input
+                type="number"
+                value={form.quantityAvailable}
+                onChange={(event) => updateField("quantityAvailable", event.target.value)}
+                min={0}
+                step={1}
+                required
+              />
             </label>
           </div>
 
@@ -319,7 +383,8 @@ export function AdCreateEditPage() {
             </Link>
           </div>
         </form>
-      </article>
-    </section>
+        </article>
+      </section>
+    </>
   );
 }

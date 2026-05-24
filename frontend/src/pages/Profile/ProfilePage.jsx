@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { deleteAd, fetchMyAds, fetchMyFavorites, removeFavorite, updateAd } from "../../shared/api/ads";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./profile.css";
@@ -28,6 +29,16 @@ function formatPrice(value) {
     return "Цена не указана";
   }
   return `${new Intl.NumberFormat("ru-RU").format(amount)} ₽`;
+}
+
+function getListingStatusLabel(listing) {
+  if (listing.is_active) {
+    return listing.quantity_total > 1 ? "В наличии" : "Активно";
+  }
+  if ((listing.quantity_total ?? 1) > 1) {
+    return (listing.quantity_available ?? 0) === 0 ? "Распродано" : "Продажи остановлены";
+  }
+  return "Услуга оказана";
 }
 
 export function ProfilePage() {
@@ -300,6 +311,7 @@ export function ProfilePage() {
 
   return (
     <section className="profile-page">
+      <Breadcrumbs items={[{ label: "Каталог", to: "/" }, { label: "Кабинет" }]} />
       <button type="button" className="profile-back" onClick={() => navigate(-1)}>
         Назад
       </button>
@@ -337,12 +349,16 @@ export function ProfilePage() {
                   <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
                 </h4>
                 <p>{formatPrice(listing.price)}</p>
-                <small>{listing.is_active ? "Активно" : "Снято с публикации"}</small>
+                <small>{getListingStatusLabel(listing)}</small>
               </div>
               <div className="profile-listings__actions">
                 <Link to={`/ads/${listing.id}/edit`}>Редактировать</Link>
                 <button type="button" onClick={() => handleListingToggle(listing)} disabled={isManagingListings}>
-                  {listing.is_active ? "Снять" : "Опубликовать"}
+                  {listing.is_active
+                    ? (listing.quantity_total ?? 1) > 1
+                      ? "Остановить продажи"
+                      : "Отметить как оказано"
+                    : "Вернуть в каталог"}
                 </button>
                 <button type="button" onClick={() => handleListingDelete(listing.id)} disabled={isManagingListings}>
                   Удалить

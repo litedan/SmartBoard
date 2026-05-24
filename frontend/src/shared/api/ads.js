@@ -42,6 +42,7 @@ export async function createAd(payload) {
   const formData = new FormData();
   formData.append("title", payload.title);
   formData.append("description", payload.description);
+  formData.append("quantity_total", String(payload.quantity_total ?? 1));
   if (payload.price !== null && payload.price !== undefined && payload.price !== "") {
     formData.append("price", String(payload.price));
   }
@@ -71,6 +72,12 @@ export async function updateAd(adId, payload) {
   }
   if (payload.category_id !== undefined) {
     formData.append("category_id", payload.category_id === null ? "" : String(payload.category_id));
+  }
+  if (payload.quantity_total !== undefined) {
+    formData.append("quantity_total", String(payload.quantity_total));
+  }
+  if (payload.quantity_available !== undefined) {
+    formData.append("quantity_available", String(payload.quantity_available));
   }
   if (payload.is_active !== undefined) {
     formData.append("is_active", payload.is_active ? "true" : "false");

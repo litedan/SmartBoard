@@ -1,15 +1,12 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap");
-
 :root {
-  --home-bg-soft: #f5f8ff;
+  --home-bg-soft: #f4f7fb;
   --home-bg-card: #ffffff;
-  --home-bg-strong: #12355b;
-  --home-border: #dae4f4;
-  --home-text: #10233a;
-  --home-muted: #58708d;
-  --home-accent: #0e9f6e;
-  --home-accent-hover: #0a7b55;
-  --home-shadow: 0 20px 50px rgba(16, 35, 58, 0.12);
+  --home-border: #dde5ee;
+  --home-text: #111827;
+  --home-muted: #5d687b;
+  --home-accent: #0f766e;
+  --home-accent-hover: #0c5f59;
+  --home-shadow: 0 14px 36px rgba(15, 23, 42, 0.07);
 }
 
 .home-page {
@@ -44,18 +41,18 @@
 
 .home-eyebrow {
   margin: 0 0 10px;
-  font-family: "Space Grotesk", sans-serif;
   font-size: 12px;
   letter-spacing: 0.24em;
-  color: #34648f;
+  color: #20665f;
+  font-weight: 600;
 }
 
 .home-hero h1 {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
   font-size: clamp(30px, 4vw, 46px);
-  line-height: 1.07;
+  line-height: 1.12;
   color: var(--home-text);
+  font-weight: 700;
 }
 
 .home-hero__lead {
@@ -119,8 +116,8 @@
 .home-metric-card__value {
   margin: 0;
   font-size: 24px;
-  font-family: "Space Grotesk", sans-serif;
-  color: #0f365d;
+  color: #0f3f4f;
+  font-weight: 700;
 }
 
 .home-metric-card__label {
@@ -275,7 +272,8 @@
 .home-feed__list {
   margin-top: 16px;
   display: grid;
-  gap: 10px;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
 }
 
 .home-feed__status {
@@ -284,6 +282,7 @@
   border-radius: 10px;
   background: #f5f8ff;
   color: #4b6481;
+  grid-column: 1 / -1;
 }
 
 .home-feed__status--error {
@@ -292,20 +291,56 @@
 }
 
 .home-ad-card {
-  border: 1px solid #d7e4f4;
-  border-radius: 14px;
-  padding: 14px;
-  background: linear-gradient(180deg, #ffffff, #f9fbff);
+  border: 1px solid #dbe4ee;
+  border-radius: 16px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
   animation: card-rise 420ms ease both;
+  display: grid;
+  gap: 10px;
+}
+
+.home-ad-card__image-wrap {
+  display: block;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e3e8f1;
+  background: #f1f5f9;
+  aspect-ratio: 4 / 3;
+}
+
+.home-ad-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s ease;
+}
+
+.home-ad-card__image-wrap:hover .home-ad-card__image {
+  transform: scale(1.03);
+}
+
+.home-ad-card__image-placeholder {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(140deg, rgba(15, 118, 110, 0.09), transparent 55%),
+    #f3f7fb;
+  color: #607086;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .home-ad-card__meta {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  color: #58708d;
+  color: #5b6678;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home-ad-card__badge {
@@ -316,13 +351,13 @@
 }
 
 .home-ad-card__fav {
-  border: 1px solid #b8cce5;
-  background: #f6faff;
-  color: #1d4872;
+  border: 1px solid #c8d6e7;
+  background: #f8fbff;
+  color: #20456c;
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -333,8 +368,8 @@
 }
 
 .home-ad-card h3 {
-  margin: 10px 0 8px;
-  font-size: 19px;
+  margin: 2px 0 0;
+  font-size: 17px;
   line-height: 1.2;
 }
 
@@ -349,9 +384,9 @@
 
 .home-ad-card__price {
   margin: 0;
-  font-family: "Space Grotesk", sans-serif;
   font-size: 22px;
-  color: #0f365d;
+  font-weight: 700;
+  color: #0f3f4f;
 }
 
 .home-ad-card__location,

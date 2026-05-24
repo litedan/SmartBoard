@@ -47,12 +47,12 @@ export function AppLayout() {
   return (
     <div className="app-shell">
       <header className="app-shell__header">
-        <div className="app-shell__brand">SmartBoard</div>
+        <NavLink to="/" className="app-shell__brand">
+          SmartBoard
+        </NavLink>
         <nav className="app-shell__nav">
-          <NavLink to="/" end>
-            Главная
-          </NavLink>
           {isAuthenticated ? <NavLink to="/ads/new">Разместить</NavLink> : null}
+          {isAuthenticated ? <NavLink to="/chat">Чаты</NavLink> : null}
           {isAuthenticated ? <NavLink to="/profile">Кабинет</NavLink> : null}
           {isAdmin ? <NavLink to="/admin">Админ</NavLink> : null}
           {isAuthenticated ? (

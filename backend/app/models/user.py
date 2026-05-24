@@ -26,3 +26,13 @@ class User(Base):
     listings = relationship("Listing", back_populates="user", cascade="all, delete-orphan")
     favorites = relationship("Favorite", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    buyer_conversations = relationship(
+        "ChatConversation",
+        foreign_keys="ChatConversation.buyer_id",
+        cascade="all, delete-orphan",
+    )
+    seller_conversations = relationship(
+        "ChatConversation",
+        foreign_keys="ChatConversation.seller_id",
+        cascade="all, delete-orphan",
+    )

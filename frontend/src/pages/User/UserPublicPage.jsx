@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { fetchUserListings } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
 import { fetchPublicProfile } from "../../shared/api/profile";
@@ -83,40 +84,43 @@ export function UserPublicPage() {
   const fullName = `${profile.user.name} ${profile.user.last_name}`.trim();
 
   return (
-    <section className="user-page">
-      <article className="user-card">
-        <button type="button" className="user-back" onClick={() => navigate(-1)}>
-          Назад
-        </button>
-        <h1>{fullName || "Пользователь"}</h1>
-        <p>Активных объявлений: {profile.active_listings_total}</p>
-        <p>
-          Телефон:{" "}
-          {profile.user.phone ? (
-            <a href={`tel:${profile.user.phone}`} className="user-link">
-              {profile.user.phone}
-            </a>
-          ) : (
-            "не указан"
-          )}
-        </p>
-      </article>
+    <>
+      <Breadcrumbs items={[{ label: "Каталог", to: "/" }, { label: fullName || "Пользователь" }]} />
+      <section className="user-page">
+        <article className="user-card">
+          <button type="button" className="user-back" onClick={() => navigate(-1)}>
+            Назад
+          </button>
+          <h1>{fullName || "Пользователь"}</h1>
+          <p>Активных объявлений: {profile.active_listings_total}</p>
+          <p>
+            Телефон:{" "}
+            {profile.user.phone ? (
+              <a href={`tel:${profile.user.phone}`} className="user-link">
+                {profile.user.phone}
+              </a>
+            ) : (
+              "не указан"
+            )}
+          </p>
+        </article>
 
-      <section className="user-card">
-        <h2>Объявления продавца</h2>
-        <div className="user-listings">
-          {listings.map((listing) => (
-            <article key={listing.id} className="user-listings__item">
-              <h3>
-                <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
-              </h3>
-              <p>{formatPrice(listing.price)}</p>
-              <small>{listing.category_name ?? "Без категории"}</small>
-            </article>
-          ))}
-          {listings.length === 0 ? <p className="user-status">У продавца пока нет активных объявлений.</p> : null}
-        </div>
+        <section className="user-card">
+          <h2>Объявления продавца</h2>
+          <div className="user-listings">
+            {listings.map((listing) => (
+              <article key={listing.id} className="user-listings__item">
+                <h3>
+                  <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
+                </h3>
+                <p>{formatPrice(listing.price)}</p>
+                <small>{listing.category_name ?? "Без категории"}</small>
+              </article>
+            ))}
+            {listings.length === 0 ? <p className="user-status">У продавца пока нет активных объявлений.</p> : null}
+          </div>
+        </section>
       </section>
-    </section>
+    </>
   );
 }

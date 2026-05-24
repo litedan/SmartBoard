@@ -6,10 +6,10 @@
 
 .ad-card {
   background: #ffffff;
-  border: 1px solid #d7e4f4;
+  border: 1px solid #dde5ee;
   border-radius: 20px;
   padding: 24px;
-  box-shadow: 0 20px 50px rgba(16, 35, 58, 0.1);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
 }
 
 .ad-back-button {
@@ -34,28 +34,28 @@
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  color: #5a718c;
+  color: #5d687b;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ad-card h1 {
   margin: 14px 0 0;
   font-size: clamp(28px, 4vw, 40px);
-  line-height: 1.08;
-  color: #10233a;
+  line-height: 1.12;
+  color: #111827;
 }
 
 .ad-card__price {
   margin: 16px 0 0;
   font-size: clamp(26px, 4vw, 36px);
-  font-weight: 800;
-  color: #0f365d;
+  font-weight: 700;
+  color: #0f3f4f;
 }
 
 .ad-card__description {
   margin: 16px 0 0;
-  color: #314f6f;
+  color: #3b4a61;
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -118,18 +118,33 @@
   border: 1px solid transparent;
   border-radius: 11px;
   padding: 10px 16px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.ad-button:hover {
+  transform: translateY(-1px);
 }
 
 .ad-button--primary {
-  background: #0e9f6e;
+  background: #0f766e;
   color: #ffffff;
 }
 
 .ad-button--primary:hover {
-  background: #0b8058;
+  background: #0c5f59;
+}
+
+.ad-button--accent {
+  background: #e2f5f3;
+  border-color: #bfe8e4;
+  color: #0f766e;
+}
+
+.ad-button--accent:hover {
+  background: #d2eeeb;
 }
 
 .ad-button--ghost {

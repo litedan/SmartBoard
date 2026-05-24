@@ -52,6 +52,19 @@ def _parse_bool(value: str | None, field_name: str) -> bool | None:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Некорректный формат поля {field_name}")
 
 
+def _parse_int(value: str | None, field_name: str) -> int | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    try:
+        parsed = int(normalized)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Некорректный формат поля {field_name}")
+    return parsed
+
+
 def _map_listing_to_ad_read(
     listing: Listing,
     category_name: str | None = None,
@@ -68,6 +81,8 @@ def _map_listing_to_ad_read(
         image_url=listing.image_url,
         user_id=listing.user_id,
         category_id=listing.category_id,
+        quantity_total=listing.quantity_total or 1,
+        quantity_available=listing.quantity_available if listing.quantity_available is not None else (listing.quantity_total or 1),
         category_name=category_name,
         author_name=author_name,
         author_phone=author_phone,
@@ -375,6 +390,7 @@ async def create_ad(
     description: str = Form(...),
     price: str | None = Form(default=None),
     category_id: int | None = Form(default=None),
+    quantity_total: str | None = Form(default="1"),
     image: UploadFile | None = File(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user_from_session),
@@ -390,6 +406,11 @@ async def create_ad(
     parsed_price = _parse_decimal(price, "price")
     if parsed_price is not None and parsed_price < 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Цена не может быть отрицательной")
+    parsed_quantity_total = _parse_int(quantity_total, "quantity_total")
+    quantity_total_value = parsed_quantity_total or 1
+    if quantity_total_value < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Количество должно быть не менее 1")
+    quantity_available_value = quantity_total_value
 
     category = None
     if category_id is not None:
@@ -422,8 +443,10 @@ async def create_ad(
         price=parsed_price,
         image_url=image_url,
         category_id=category_id,
+        quantity_total=quantity_total_value,
+        quantity_available=quantity_available_value,
         user_id=current_user.id,
-        is_active=True,
+        is_active=quantity_available_value > 0,
     )
 
     return _map_listing_to_ad_read(
@@ -443,6 +466,8 @@ async def update_ad(
     description: str | None = Form(default=None),
     price: str | None = Form(default=None),
     category_id: str | None = Form(default=None),
+    quantity_total: str | None = Form(default=None),
+    quantity_available: str | None = Form(default=None),
     is_active: str | None = Form(default=None),
     remove_image: str | None = Form(default=None),
     image: UploadFile | None = File(default=None),
@@ -489,9 +514,19 @@ async def update_ad(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Категория не найдена")
             update_data["category_id"] = parsed_category_id
 
+    parsed_quantity_total = _parse_int(quantity_total, "quantity_total")
+    if parsed_quantity_total is not None:
+        if parsed_quantity_total < 1:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Количество должно быть не менее 1")
+        update_data["quantity_total"] = parsed_quantity_total
+
+    parsed_quantity_available = _parse_int(quantity_available, "quantity_available")
+    if parsed_quantity_available is not None:
+        if parsed_quantity_available < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Остаток не может быть отрицательным")
+        update_data["quantity_available"] = parsed_quantity_available
+
     parsed_active = _parse_bool(is_active, "is_active")
-    if parsed_active is not None:
-        update_data["is_active"] = parsed_active
 
     parsed_remove_image = _parse_bool(remove_image, "remove_image")
     if parsed_remove_image:
@@ -512,6 +547,19 @@ async def update_ad(
         file_path = LISTINGS_DIR / filename
         file_path.write_bytes(content)
         update_data["image_url"] = f"/media/listings/{filename}"
+
+    next_total = update_data.get("quantity_total", listing.quantity_total or 1)
+    next_available = update_data.get(
+        "quantity_available",
+        listing.quantity_available if listing.quantity_available is not None else (listing.quantity_total or 1),
+    )
+    if next_available > next_total:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Остаток не может быть больше общего количества")
+
+    if next_available == 0:
+        update_data["is_active"] = False
+    elif parsed_active is not None:
+        update_data["is_active"] = parsed_active
 
     if not update_data:
         category_name = listing.category.name if listing.category else None

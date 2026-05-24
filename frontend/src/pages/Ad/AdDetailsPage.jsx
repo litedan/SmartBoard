@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { addFavorite, fetchAdById, removeFavorite } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
 import "./ad.css";
@@ -31,6 +32,16 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function getListingStatus(ad) {
+  if (ad.is_active) {
+    return ad.quantity_total > 1 ? "В наличии" : "Активно";
+  }
+  if (ad.quantity_total > 1) {
+    return ad.quantity_available === 0 ? "Распродано" : "Продажи остановлены";
+  }
+  return "Услуга оказана";
 }
 
 export function AdDetailsPage() {
@@ -129,71 +140,76 @@ export function AdDetailsPage() {
     }
   }
 
+  const breadcrumbs = [{ label: "Каталог", to: "/" }, { label: ad.title }];
+  const statusLabel = getListingStatus(ad);
+
   return (
-    <section className="ad-page">
-      <article className="ad-card">
-        <button type="button" className="ad-back-button" onClick={() => navigate(-1)}>
-          <span aria-hidden="true">←</span>
-          <span>Назад</span>
-        </button>
-        <div className="ad-card__top">
-          <span>{ad.category_name ?? "Без категории"}</span>
-          <span className={`ad-status-chip ${ad.is_active ? "ad-status-chip--active" : "ad-status-chip--inactive"}`}>
-            {ad.is_active ? "Активно" : "Снято с публикации"}
-          </span>
-        </div>
-        <h1>{ad.title}</h1>
-        <p className="ad-card__price">{formatPrice(ad.price)}</p>
-        <p className="ad-card__description">{ad.description}</p>
-        {ad.image_url ? (
-          <div className="ad-card__image-wrap">
-            <img src={ad.image_url} alt={ad.title} className="ad-card__image" />
-            <a className="ad-card__image-link" href={ad.image_url} target="_blank" rel="noreferrer">
-              Открыть изображение в новой вкладке
-            </a>
-          </div>
-        ) : null}
-        <div className="ad-card__meta">
-          <p>
-            Автор:{" "}
-            <Link to={`/users/${ad.user_id}`} className="ad-inline-link">
-              {ad.author_name ?? "Пользователь SmartBoard"}
-            </Link>
-          </p>
-          <p>
-            Связаться:{" "}
-            {ad.author_phone ? (
-              <a className="ad-inline-link" href={`tel:${ad.author_phone}`}>
-                {ad.author_phone}
-              </a>
-            ) : (
-              "номер не указан"
-            )}
-          </p>
-          <p>Опубликовано: {formatDate(ad.created_at)}</p>
-        </div>
-        <div className="ad-card__actions">
-          <button
-            type="button"
-            className="ad-button ad-button--primary"
-            disabled={isFavoritePending}
-            onClick={toggleFavorite}
-          >
-            {ad.is_favorite ? "Убрать из избранного" : "Добавить в избранное"}
+    <>
+      <Breadcrumbs items={breadcrumbs} />
+      <section className="ad-page">
+        <article className="ad-card">
+          <button type="button" className="ad-back-button" onClick={() => navigate(-1)}>
+            <span aria-hidden="true">←</span>
+            <span>Назад</span>
           </button>
-          {ad.author_phone ? (
-            <a href={`tel:${ad.author_phone}`} className="ad-button ad-button--primary">
-              Связаться с автором
-            </a>
+          <div className="ad-card__top">
+            <span>{ad.category_name ?? "Без категории"}</span>
+            <span className={`ad-status-chip ${ad.is_active ? "ad-status-chip--active" : "ad-status-chip--inactive"}`}>
+              {statusLabel}
+            </span>
+          </div>
+          <h1>{ad.title}</h1>
+          <p className="ad-card__price">{formatPrice(ad.price)}</p>
+          <p className="ad-card__description">{ad.description}</p>
+          {ad.image_url ? (
+            <div className="ad-card__image-wrap">
+              <img src={ad.image_url} alt={ad.title} className="ad-card__image" />
+              <a className="ad-card__image-link" href={ad.image_url} target="_blank" rel="noreferrer">
+                Открыть изображение в новой вкладке
+              </a>
+            </div>
           ) : null}
-          <Link to="/" className="ad-button ad-button--ghost">
-            К каталогу
-          </Link>
-          <Link to={`/users/${ad.user_id}`} className="ad-button ad-button--ghost">
-            Профиль продавца
-          </Link>
-        </div>
-      </article>
-    </section>
+          <div className="ad-card__meta">
+            <p>
+              Автор:{" "}
+              <Link to={`/users/${ad.user_id}`} className="ad-inline-link">
+                {ad.author_name ?? "Пользователь SmartBoard"}
+              </Link>
+            </p>
+            <p>
+              Связаться:{" "}
+              <Link className="ad-inline-link" to={`/chat?listingId=${ad.id}`}>
+                Написать в чат
+              </Link>
+            </p>
+            {ad.quantity_total > 1 ? (
+              <p>
+                Остаток: {ad.quantity_available} из {ad.quantity_total}
+              </p>
+            ) : null}
+            <p>Опубликовано: {formatDate(ad.created_at)}</p>
+          </div>
+          <div className="ad-card__actions">
+            <button
+              type="button"
+              className="ad-button ad-button--primary"
+              disabled={isFavoritePending}
+              onClick={toggleFavorite}
+            >
+              {ad.is_favorite ? "❤️ В избранном" : "🤍 В избранное"}
+            </button>
+            <Link to={`/chat?listingId=${ad.id}`} className="ad-button ad-button--accent">
+              Открыть чат с автором
+            </Link>
+            <Link to="/" className="ad-button ad-button--ghost">
+              К каталогу
+            </Link>
+            <Link to={`/users/${ad.user_id}`} className="ad-button ad-button--ghost">
+              Профиль продавца
+            </Link>
+          </div>
+        </article>
+      </section>
+    </>
   );
 }

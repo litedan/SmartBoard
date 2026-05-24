@@ -15,6 +15,7 @@ class AdBase(BaseModel):
     description: str = Field(..., min_length=5, max_length=5000)
     price: Decimal | None = Field(default=None, ge=0)
     category_id: int | None = Field(default=None, ge=1)
+    quantity_total: int = Field(default=1, ge=1)
 
     @field_validator("title", "description", mode="before")
     @classmethod
@@ -52,6 +53,8 @@ class AdRead(BaseModel):
     image_url: str | None
     user_id: int
     category_id: int | None
+    quantity_total: int
+    quantity_available: int
     category_name: str | None = None
     author_name: str | None = None
     author_phone: str | None = None
@@ -72,6 +75,8 @@ class AdUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=5, max_length=5000)
     price: Decimal | None = Field(default=None, ge=0)
     category_id: int | None = Field(default=None, ge=1)
+    quantity_total: int | None = Field(default=None, ge=1)
+    quantity_available: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
 
 
