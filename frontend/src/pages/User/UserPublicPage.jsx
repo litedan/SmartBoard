@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { BackButton } from "../../components/Layout/BackButton";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { fetchUserListings } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
@@ -73,9 +74,7 @@ export function UserPublicPage() {
       <section className="user-page">
         <article className="user-card">
           <p className="user-status user-status--error">{error || "Пользователь не найден"}</p>
-          <button type="button" className="user-back" onClick={() => navigate(-1)}>
-            Назад
-          </button>
+          <BackButton fallback="/" />
         </article>
       </section>
     );
@@ -88,9 +87,7 @@ export function UserPublicPage() {
       <Breadcrumbs items={[{ label: "Каталог", to: "/" }, { label: fullName || "Пользователь" }]} />
       <section className="user-page">
         <article className="user-card">
-          <button type="button" className="user-back" onClick={() => navigate(-1)}>
-            Назад
-          </button>
+          <BackButton fallback="/" />
           <h1>{fullName || "Пользователь"}</h1>
           <p>Активных объявлений: {profile.active_listings_total}</p>
           <p>

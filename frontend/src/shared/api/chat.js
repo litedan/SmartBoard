@@ -15,13 +15,6 @@ export async function fetchConversationMessages(conversationId, { limit = 50, of
   return apiRequest(`/chat/conversations/${conversationId}/messages?${params.toString()}`);
 }
 
-export async function sendMessage(conversationId, text) {
-  return apiRequest(`/chat/conversations/${conversationId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ text }),
-  });
-}
-
 export async function markConversationRead(conversationId) {
   return apiRequest(`/chat/conversations/${conversationId}/read`, { method: "POST" });
 }

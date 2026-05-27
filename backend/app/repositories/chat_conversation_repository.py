@@ -27,6 +27,24 @@ class ChatConversationRepository(BaseRepository[ChatConversation]):
         return result.scalar_one_or_none()
 
     @classmethod
+    async def list_for_listing_as_seller(
+        cls,
+        session: AsyncSession,
+        listing_id: int,
+        seller_id: int,
+    ) -> list[ChatConversation]:
+        stmt = (
+            select(ChatConversation)
+            .where(
+                ChatConversation.listing_id == listing_id,
+                ChatConversation.seller_id == seller_id,
+            )
+            .order_by(ChatConversation.updated_at.desc())
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    @classmethod
     async def list_for_user(
         cls,
         session: AsyncSession,

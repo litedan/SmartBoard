@@ -34,6 +34,12 @@ export async function fetchAdById(adId) {
   return apiRequest(`/ads/${adId}`);
 }
 
+export async function fetchSimilarAds(adId, { limit = 12 } = {}) {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  return apiRequest(`/ads/${adId}/similar?${params.toString()}`);
+}
+
 export async function fetchAdCategories() {
   return apiRequest("/ads/categories");
 }

@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import { BackButton } from "../../components/Layout/BackButton";
+import { Button } from "../../components/UI/Button";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
-import { ApiError } from "../../shared/api/client";
+import { fetchAdById } from "../../shared/api/ads";
+import { ApiError, apiRequest } from "../../shared/api/client";
 import {
   createConversationByListing,
   fetchConversationMessages,
   fetchConversations,
   markConversationRead,
-  sendMessage,
 } from "../../shared/api/chat";
+import { createChatSocket } from "../../shared/chatWebSocket";
 import "./chat.css";
 
 function formatTime(value) {
@@ -35,42 +38,95 @@ function getFullName(user) {
   return `${user.name} ${user.last_name}`.trim() || "Пользователь";
 }
 
+function mergeConversation(list, conversation) {
+  if (!conversation?.id) {
+    return list;
+  }
+  const withoutDuplicate = list.filter((item) => item.id !== conversation.id);
+  return [conversation, ...withoutDuplicate];
+}
+
 export function ChatPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const listingIdFromQuery = Number(searchParams.get("listingId") || "");
+  const conversationIdFromQuery = Number(searchParams.get("conversationId") || "");
 
   const [conversations, setConversations] = useState([]);
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [listingContext, setListingContext] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isSocketReady, setIsSocketReady] = useState(false);
   const [error, setError] = useState("");
+  const socketRef = useRef(null);
 
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
 
+  const activeConversation = selectedConversation;
+
   const breadcrumbs = useMemo(() => {
-    const items = [{ label: "Каталог", to: "/" }, { label: "Чаты" }];
-    if (selectedConversation) {
-      items.push({ label: selectedConversation.listing_title });
+    const items = [{ label: "Каталог", to: "/" }];
+    const listingId = activeConversation?.listing_id || listingContext?.id || (listingIdFromQuery > 0 ? listingIdFromQuery : null);
+    const listingTitle =
+      activeConversation?.listing_title || listingContext?.title || (listingId ? "Объявление" : null);
+
+    if (listingId && listingTitle) {
+      items.push({ label: listingTitle, to: `/ads/${listingId}` });
+      items.push({ label: "Чат" });
+      return items;
     }
+
+    items.push({ label: "Чаты" });
     return items;
-  }, [selectedConversation]);
+  }, [activeConversation, listingContext, listingIdFromQuery]);
+
+  const selectConversation = useCallback(
+    (conversationId, { replaceListingQuery = true } = {}) => {
+      if (!conversationId) {
+        return;
+      }
+      setSelectedConversationId(conversationId);
+      if (replaceListingQuery) {
+        setSearchParams({ conversationId: String(conversationId) }, { replace: true });
+      }
+    },
+    [setSearchParams],
+  );
 
   const loadConversations = useCallback(async () => {
     try {
       const payload = await fetchConversations();
       const nextConversations = payload?.items ?? [];
-      setConversations(nextConversations);
+      setConversations((prev) => {
+        const merged = [...nextConversations];
+        for (const item of prev) {
+          if (!merged.some((conversation) => conversation.id === item.id)) {
+            merged.push(item);
+          }
+        }
+        return merged.sort(
+          (left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
+        );
+      });
       setError("");
       setSelectedConversationId((prev) => {
-        if (prev && nextConversations.some((item) => item.id === prev)) {
-          return prev;
+        const preferredId =
+          (Number.isInteger(conversationIdFromQuery) && conversationIdFromQuery > 0
+            ? conversationIdFromQuery
+            : null) || prev;
+        if (preferredId && nextConversations.some((item) => item.id === preferredId)) {
+          return preferredId;
+        }
+        if (preferredId) {
+          return preferredId;
         }
         return nextConversations[0]?.id ?? null;
       });
@@ -83,7 +139,7 @@ export function ChatPage() {
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [navigate]);
+  }, [conversationIdFromQuery, navigate]);
 
   const loadMessages = useCallback(
     async (conversationId) => {
@@ -112,51 +168,182 @@ export function ChatPage() {
 
   useEffect(() => {
     let mounted = true;
+    const listingId =
+      activeConversation?.listing_id ||
+      (Number.isInteger(listingIdFromQuery) && listingIdFromQuery > 0 ? listingIdFromQuery : null);
 
-    async function bootstrap() {
-      if (Number.isInteger(listingIdFromQuery) && listingIdFromQuery > 0) {
-        try {
-          const conversation = await createConversationByListing(listingIdFromQuery);
-          if (!mounted) {
-            return;
-          }
-          setSelectedConversationId(conversation.id);
-        } catch (requestError) {
-          if (!mounted) {
-            return;
-          }
-          if (requestError instanceof ApiError && requestError.status === 401) {
-            navigate("/login", { replace: true });
-            return;
-          }
-          setError(requestError instanceof ApiError ? requestError.message : "Не удалось открыть чат");
+    if (!listingId) {
+      setListingContext(null);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    if (activeConversation?.listing_id === listingId && activeConversation?.listing_title) {
+      setListingContext({ id: activeConversation.listing_id, title: activeConversation.listing_title });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    async function loadListingContext() {
+      try {
+        const ad = await fetchAdById(listingId);
+        if (!mounted) {
+          return;
         }
-      }
-      if (mounted) {
-        await loadConversations();
+        setListingContext({ id: ad.id, title: ad.title });
+      } catch {
+        if (!mounted) {
+          return;
+        }
+        setListingContext({ id: listingId, title: "Объявление" });
       }
     }
 
-    bootstrap();
+    loadListingContext();
     return () => {
       mounted = false;
     };
-  }, [listingIdFromQuery, loadConversations, navigate]);
+  }, [activeConversation, listingIdFromQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadCurrentUser() {
+      try {
+        const me = await apiRequest("/auth/me");
+        if (mounted) {
+          setCurrentUserId(me?.id ?? null);
+        }
+      } catch {
+        if (mounted) {
+          setCurrentUserId(null);
+        }
+      }
+    }
+
+    loadCurrentUser();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
+
+  useEffect(() => {
+    if (Number.isInteger(conversationIdFromQuery) && conversationIdFromQuery > 0) {
+      setSelectedConversationId(conversationIdFromQuery);
+    }
+  }, [conversationIdFromQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function openListingChat() {
+      if (!Number.isInteger(listingIdFromQuery) || listingIdFromQuery <= 0) {
+        return;
+      }
+
+      try {
+        const conversation = await createConversationByListing(listingIdFromQuery);
+        if (!mounted) {
+          return;
+        }
+        setConversations((prev) => mergeConversation(prev, conversation));
+        selectConversation(conversation.id);
+      } catch (requestError) {
+        if (!mounted) {
+          return;
+        }
+        if (requestError instanceof ApiError && requestError.status === 401) {
+          navigate("/login", { replace: true });
+          return;
+        }
+        if (requestError instanceof ApiError && requestError.status === 404) {
+          setError(requestError.message || "По этому объявлению пока нет переписки");
+        } else {
+          setError(requestError instanceof ApiError ? requestError.message : "Не удалось открыть чат");
+        }
+      }
+    }
+
+    openListingChat();
+    return () => {
+      mounted = false;
+    };
+  }, [listingIdFromQuery, navigate, selectConversation]);
 
   useEffect(() => {
     loadMessages(selectedConversationId);
   }, [loadMessages, selectedConversationId]);
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (selectedConversationId) {
-        loadMessages(selectedConversationId);
+  const appendMessage = useCallback((message) => {
+    if (!message?.id) {
+      return;
+    }
+    setMessages((prev) => {
+      if (prev.some((item) => item.id === message.id)) {
+        return prev;
       }
-      loadConversations();
-    }, 8000);
+      return [...prev, message];
+    });
+    setConversations((prev) =>
+      prev
+        .map((conversation) =>
+          conversation.id === message.conversation_id
+            ? {
+                ...conversation,
+                last_message_text: message.text,
+                last_message_at: message.created_at,
+                last_message_sender_id: message.sender_id,
+                updated_at: message.created_at,
+              }
+            : conversation,
+        )
+        .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime()),
+    );
+  }, []);
 
-    return () => clearInterval(intervalId);
-  }, [loadConversations, loadMessages, selectedConversationId]);
+  useEffect(() => {
+    if (!selectedConversationId) {
+      socketRef.current?.close();
+      socketRef.current = null;
+      setIsSocketReady(false);
+      return undefined;
+    }
+
+    setIsSocketReady(false);
+    const socket = createChatSocket(selectedConversationId, {
+      onOpen: () => {
+        setIsSocketReady(true);
+        setError("");
+      },
+      onClose: () => {
+        setIsSocketReady(false);
+      },
+      onError: (message) => {
+        setError(message);
+      },
+      onMessage: (message) => {
+        appendMessage(message);
+        if (message.sender_id !== currentUserId) {
+          markConversationRead(selectedConversationId).catch(() => undefined);
+        }
+      },
+    });
+
+    socketRef.current = socket;
+    return () => {
+      socket.close();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
+      setIsSocketReady(false);
+    };
+  }, [appendMessage, currentUserId, selectedConversationId]);
 
   async function handleSendMessage(event) {
     event.preventDefault();
@@ -165,32 +352,45 @@ export function ChatPage() {
       return;
     }
 
+    if (!socketRef.current?.isOpen()) {
+      setError("Нет соединения с чатом. Обновите страницу.");
+      return;
+    }
+
     setIsSending(true);
     try {
-      await sendMessage(selectedConversationId, text);
+      socketRef.current.send(text);
       setMessageText("");
-      await loadMessages(selectedConversationId);
-      await loadConversations();
+      setError("");
     } catch (requestError) {
-      if (requestError instanceof ApiError && requestError.status === 401) {
-        navigate("/login", { replace: true });
-        return;
-      }
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось отправить сообщение");
+      setError(requestError.message || "Не удалось отправить сообщение");
     } finally {
       setIsSending(false);
     }
   }
 
+  const canShowThread = Boolean(selectedConversationId);
+
+  function isIncomingMessage(message) {
+    if (activeConversation?.other_user) {
+      return message.sender_id === activeConversation.other_user.id;
+    }
+    if (currentUserId) {
+      return message.sender_id !== currentUserId;
+    }
+    return false;
+  }
+
   return (
     <>
       <Breadcrumbs items={breadcrumbs} />
+      <BackButton fallback="/" />
       <section className="chat-page">
         <aside className="chat-sidebar">
           <h1>Чаты</h1>
-          {isLoadingConversations ? <p className="chat-status">Загружаем диалоги...</p> : null}
+          {isLoadingConversations ? <p className="chat-status">⏳ ...</p> : null}
           {!isLoadingConversations && conversations.length === 0 ? (
-            <p className="chat-status">У вас пока нет диалогов.</p>
+            <p className="chat-status">📭 Пусто</p>
           ) : null}
           <div className="chat-list">
             {conversations.map((conversation) => (
@@ -198,11 +398,11 @@ export function ChatPage() {
                 key={conversation.id}
                 type="button"
                 className={`chat-list__item ${conversation.id === selectedConversationId ? "active" : ""}`}
-                onClick={() => setSelectedConversationId(conversation.id)}
+                onClick={() => selectConversation(conversation.id)}
               >
                 <p className="chat-list__name">{getFullName(conversation.other_user)}</p>
                 <p className="chat-list__title">{conversation.listing_title}</p>
-                <p className="chat-list__preview">{conversation.last_message_text ?? "Начните диалог"}</p>
+                <p className="chat-list__preview">{conversation.last_message_text ?? "✉️ Напишите"}</p>
                 <div className="chat-list__meta">
                   <small>{formatTime(conversation.last_message_at || conversation.updated_at)}</small>
                   {conversation.unread_count > 0 ? <span>{conversation.unread_count}</span> : null}
@@ -213,23 +413,23 @@ export function ChatPage() {
         </aside>
 
         <section className="chat-thread">
-          {selectedConversation ? (
+          {canShowThread ? (
             <>
               <header className="chat-thread__head">
-                <h2>{selectedConversation.listing_title}</h2>
-                <p>{getFullName(selectedConversation.other_user)}</p>
+                <h2>{activeConversation?.listing_title ?? listingContext?.title ?? "Чат по объявлению"}</h2>
+                {activeConversation?.other_user ? (
+                  <p>👤 {getFullName(activeConversation.other_user)}</p>
+                ) : null}
               </header>
               <div className="chat-thread__messages">
-                {isLoadingMessages ? <p className="chat-status">Загружаем сообщения...</p> : null}
+                {isLoadingMessages ? <p className="chat-status">⏳ ...</p> : null}
                 {!isLoadingMessages && messages.length === 0 ? (
-                  <p className="chat-status">Пока нет сообщений. Напишите первым.</p>
+                  <p className="chat-status">✉️ Напишите первым</p>
                 ) : null}
                 {messages.map((message) => (
                   <article
                     key={message.id}
-                    className={`chat-bubble ${
-                      message.sender_id === selectedConversation.other_user.id ? "chat-bubble--incoming" : "chat-bubble--outgoing"
-                    }`}
+                    className={`chat-bubble ${isIncomingMessage(message) ? "chat-bubble--incoming" : "chat-bubble--outgoing"}`}
                   >
                     <p>{message.text}</p>
                     <small>{formatTime(message.created_at)}</small>
@@ -242,18 +442,24 @@ export function ChatPage() {
                   type="text"
                   value={messageText}
                   onChange={(event) => setMessageText(event.target.value)}
-                  placeholder="Введите сообщение"
+                  placeholder="💬 Сообщение..."
                   maxLength={2000}
                   required
                 />
-                <button type="submit" disabled={isSending || !messageText.trim()}>
-                  {isSending ? "Отправляем..." : "Отправить"}
-                </button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={isSending}
+                  disabled={isSending || !messageText.trim() || !isSocketReady}
+                  className="chat-thread__send"
+                >
+                  Отправить
+                </Button>
               </form>
             </>
           ) : (
             <div className="chat-thread__empty">
-              <p>Выберите диалог слева, чтобы начать общение.</p>
+              <p>👈 Выберите диалог</p>
             </div>
           )}
         </section>

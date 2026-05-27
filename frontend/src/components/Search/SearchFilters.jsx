@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { Button } from "../UI/Button";
 import { fetchAdCategories } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
+import { addSearchHistory, clearSearchHistory, getSearchHistory } from "../../shared/searchHistory";
 
 const DEFAULT_FILTERS = {
   query: "",
@@ -13,6 +15,8 @@ const DEFAULT_FILTERS = {
 export function SearchFilters({ value = DEFAULT_FILTERS, onApply }) {
   const [draft, setDraft] = useState(DEFAULT_FILTERS);
   const [categories, setCategories] = useState([]);
+  const [history, setHistory] = useState(() => getSearchHistory());
+  const [historyPick, setHistoryPick] = useState("");
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [error, setError] = useState("");
 
@@ -59,44 +63,96 @@ export function SearchFilters({ value = DEFAULT_FILTERS, onApply }) {
     };
   }, []);
 
-  const previewText = useMemo(() => {
-    const category = categories.find((item) => String(item.id) === String(draft.categoryId));
-    const categoryLabel = category?.name ?? "все категории";
-    const queryLabel = draft.query.trim() ? `по запросу «${draft.query.trim()}»` : "без ключевого слова";
-    const priceLabel =
-      draft.priceMin || draft.priceMax
-        ? `цена: ${draft.priceMin || "0"} - ${draft.priceMax || "∞"} ₽`
-        : "без фильтра по цене";
-    return `${categoryLabel}, ${priceLabel}, ${queryLabel}`;
-  }, [categories, draft.categoryId, draft.priceMax, draft.priceMin, draft.query]);
+  function applyFilters(nextDraft) {
+    onApply?.({
+      query: nextDraft.query.trim(),
+      categoryId: nextDraft.categoryId,
+      priceMin: nextDraft.priceMin,
+      priceMax: nextDraft.priceMax,
+    });
+  }
+
+  function handleQueryChange(event) {
+    const query = event.target.value;
+    const nextDraft = { ...draft, query };
+    setDraft(nextDraft);
+
+    if (!query.trim()) {
+      applyFilters(nextDraft);
+    }
+  }
 
   function handleSubmit(event) {
     event.preventDefault();
-    onApply?.({
-      query: draft.query.trim(),
-      categoryId: draft.categoryId,
-      priceMin: draft.priceMin,
-      priceMax: draft.priceMax,
-    });
+    const trimmedQuery = draft.query.trim();
+    if (trimmedQuery) {
+      setHistory(addSearchHistory(trimmedQuery));
+    }
+    applyFilters(draft);
+  }
+
+  function handleHistorySelect(event) {
+    const term = event.target.value;
+    if (!term) {
+      setHistoryPick("");
+      return;
+    }
+    const nextDraft = { ...draft, query: term };
+    setDraft(nextDraft);
+    setHistory(addSearchHistory(term));
+    applyFilters(nextDraft);
+    setHistoryPick("");
+  }
+
+  function handleClearHistory() {
+    clearSearchHistory();
+    setHistory([]);
+    setHistoryPick("");
   }
 
   return (
     <section className="home-search" aria-label="Поиск объявлений">
       <div className="home-search__head">
-        <h2>Найдите нужное объявление</h2>
-        <p>Поиск работает по базе объявлений в реальном времени.</p>
+        <h2>Поиск объявлений</h2>
       </div>
 
       <form className="home-search__form" onSubmit={handleSubmit}>
         <label className="home-search__field home-search__field--wide">
           Что ищете?
           <input
-            type="text"
-            placeholder="Например: iPhone 14, мастер по плитке"
+            type="search"
+            placeholder="Например: iPhone, ремонт"
             value={draft.query}
-            onChange={(event) => setDraft((prev) => ({ ...prev, query: event.target.value }))}
+            onChange={handleQueryChange}
+            list="search-history-suggestions"
           />
+          {history.length > 0 ? (
+            <datalist id="search-history-suggestions">
+              {history.map((term) => (
+                <option key={term} value={term} />
+              ))}
+            </datalist>
+          ) : null}
         </label>
+
+        {history.length > 0 ? (
+          <label className="home-search__field home-search__field--history">
+            История
+            <div className="home-search__history-row">
+              <select value={historyPick} onChange={handleHistorySelect} className="home-search__history-select">
+                <option value="">Выберите запрос</option>
+                {history.map((term) => (
+                  <option key={term} value={term}>
+                    {term}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="home-search__history-clear" onClick={handleClearHistory}>
+                Очистить
+              </button>
+            </div>
+          </label>
+        ) : null}
 
         <label className="home-search__field">
           Категория
@@ -105,7 +161,7 @@ export function SearchFilters({ value = DEFAULT_FILTERS, onApply }) {
             onChange={(event) => setDraft((prev) => ({ ...prev, categoryId: event.target.value }))}
             disabled={isLoadingCategories}
           >
-            <option value="">Все категории</option>
+            <option value="">Все</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
                 {category.name}
@@ -115,7 +171,7 @@ export function SearchFilters({ value = DEFAULT_FILTERS, onApply }) {
         </label>
 
         <label className="home-search__field">
-          Цена от
+          От, ₽
           <input
             type="number"
             min="0"
@@ -126,23 +182,22 @@ export function SearchFilters({ value = DEFAULT_FILTERS, onApply }) {
         </label>
 
         <label className="home-search__field">
-          Цена до
+          До, ₽
           <input
             type="number"
             min="0"
             value={draft.priceMax}
             onChange={(event) => setDraft((prev) => ({ ...prev, priceMax: event.target.value }))}
-            placeholder="100000"
+            placeholder="∞"
           />
         </label>
 
-        <button type="submit" className="home-button home-button--primary home-search__submit">
-          Показать предложения
-        </button>
+        <Button type="submit" variant="primary" className="home-search__submit">
+          Найти
+        </Button>
       </form>
 
       {error ? <p className="home-search__preview home-search__preview--error">{error}</p> : null}
-      <p className="home-search__preview">Предпросмотр фильтра: {previewText}</p>
     </section>
   );
 }

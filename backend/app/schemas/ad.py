@@ -59,6 +59,7 @@ class AdRead(BaseModel):
     author_name: str | None = None
     author_phone: str | None = None
     author_avatar_url: str | None = None
+    author_created_at: datetime | None = None
     is_favorite: bool = False
     is_active: bool
     created_at: datetime

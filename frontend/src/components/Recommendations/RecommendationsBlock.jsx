@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Button } from "../UI/Button";
 
 const CATEGORY_INSIGHTS = [
   { title: "Техника", growth: "+28% за неделю", details: "Смартфоны и ноутбуки" },
@@ -12,9 +12,9 @@ export function RecommendationsBlock() {
       <section className="home-recommendations__card">
         <h2>Рекомендации для вас</h2>
         <p>Заполните профиль и получите персональные подборки объявлений.</p>
-        <Link to="/register" className="home-button home-button--ghost home-recommendations__cta">
+        <Button to="/register" variant="secondary" className="home-recommendations__cta">
           Создать аккаунт
-        </Link>
+        </Button>
       </section>
 
       <section className="home-recommendations__card">

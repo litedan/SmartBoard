@@ -1,6 +1,6 @@
 .chat-page {
   width: min(1180px, 100%);
-  margin: 0 auto;
+  margin: 8px auto 40px;
   padding: 14px 16px 40px;
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
@@ -179,19 +179,10 @@
   font-size: 14px;
 }
 
-.chat-thread__form button {
-  border: 1px solid transparent;
-  border-radius: 10px;
+.chat-thread__send {
   padding: 10px 14px;
-  background: #0f766e;
-  color: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.chat-thread__form button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  border-radius: 10px;
+  white-space: nowrap;
 }
 
 .chat-thread__empty {

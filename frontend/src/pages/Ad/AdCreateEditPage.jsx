@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { BackButton } from "../../components/Layout/BackButton";
+import { Button } from "../../components/UI/Button";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { createAd, fetchAdById, fetchAdCategories, updateAd } from "../../shared/api/ads";
 import { ApiError } from "../../shared/api/client";
@@ -203,11 +205,18 @@ export function AdCreateEditPage() {
     );
   }
 
-  const breadcrumbs = [
-    { label: "Каталог", to: "/" },
-    ...(isEditMode && adId ? [{ label: form.title?.trim() || `Объявление #${adId}`, to: `/ads/${adId}` }] : []),
-    { label: isEditMode ? "Редактирование" : "Новое объявление" },
-  ];
+  const breadcrumbs = isEditMode
+    ? [
+        { label: "Каталог", to: "/" },
+        { label: "Кабинет", to: "/profile" },
+        { label: form.title?.trim() || `Объявление #${adId}`, to: `/ads/${adId}` },
+        { label: "Редактирование" },
+      ]
+    : [
+        { label: "Каталог", to: "/" },
+        { label: "Кабинет", to: "/profile" },
+        { label: "Новое объявление" },
+      ];
 
   const statusLabel = isActive
     ? Number(form.quantityTotal) > 1
@@ -222,25 +231,26 @@ export function AdCreateEditPage() {
   return (
     <>
       <Breadcrumbs items={breadcrumbs} />
-      <section className="ad-page">
+      <section className="ad-page ad-page--form">
         <article className="ad-card ad-card--form">
-        <button type="button" className="ad-back-button" onClick={() => navigate(-1)}>
-          <span aria-hidden="true">←</span>
-          <span>Назад</span>
-        </button>
+          <BackButton fallback="/profile" label="В кабинет" />
 
-        <div className="ad-card__top">
+          <div className="ad-card__top">
           <span>{isEditMode ? "Редактирование" : "Новое объявление"}</span>
           <span>SmartBoard</span>
         </div>
-        <h1>{isEditMode ? "Редактировать объявление" : "Создать объявление"}</h1>
-        <p className="ad-form__hint">{isEditMode ? "Измените нужные поля и сохраните." : "Заполните форму, и объявление появится в каталоге."}</p>
+          <h1 className="ad-form__title">{isEditMode ? "Редактировать объявление" : "Создать объявление"}</h1>
+          <p className="ad-form__hint">
+            {isEditMode ? "Измените нужные поля и сохраните." : "Заполните форму — объявление появится в каталоге."}
+          </p>
 
-        <div className={`ad-status-chip ${isActive ? "ad-status-chip--active" : "ad-status-chip--inactive"}`}>
-          Статус: {statusLabel}
-        </div>
+          {isEditMode ? (
+            <div className={`ad-status-chip ${isActive ? "ad-status-chip--active" : "ad-status-chip--inactive"}`}>
+              Статус: {statusLabel}
+            </div>
+          ) : null}
 
-        <form className="ad-form" onSubmit={handleSubmit}>
+          <form className="ad-form" onSubmit={handleSubmit}>
           <label>
             Заголовок
             <input
@@ -294,30 +304,32 @@ export function AdCreateEditPage() {
             </label>
           </div>
 
-          <div className="ad-form__row">
-            <label>
-              Всего единиц
-              <input
-                type="number"
-                value={form.quantityTotal}
-                onChange={(event) => updateField("quantityTotal", event.target.value)}
-                min={1}
-                step={1}
-                required
-              />
-            </label>
-            <label>
-              Остаток
-              <input
-                type="number"
-                value={form.quantityAvailable}
-                onChange={(event) => updateField("quantityAvailable", event.target.value)}
-                min={0}
-                step={1}
-                required
-              />
-            </label>
-          </div>
+          {isEditMode ? (
+            <div className="ad-form__row">
+              <label>
+                Всего единиц
+                <input
+                  type="number"
+                  value={form.quantityTotal}
+                  onChange={(event) => updateField("quantityTotal", event.target.value)}
+                  min={1}
+                  step={1}
+                  required
+                />
+              </label>
+              <label>
+                Остаток
+                <input
+                  type="number"
+                  value={form.quantityAvailable}
+                  onChange={(event) => updateField("quantityAvailable", event.target.value)}
+                  min={0}
+                  step={1}
+                  required
+                />
+              </label>
+            </div>
+          ) : null}
 
           {isEditMode ? (
             <label className="ad-toggle">
@@ -375,12 +387,12 @@ export function AdCreateEditPage() {
           {success ? <p className="ad-status ad-status--success">{success}</p> : null}
 
           <div className="ad-card__actions">
-            <button type="submit" className="ad-button ad-button--primary" disabled={isSubmitting}>
-              {isSubmitting ? "Сохраняем..." : isEditMode ? "Сохранить" : "Опубликовать"}
-            </button>
-            <Link to="/" className="ad-button ad-button--ghost">
+            <Button type="submit" variant="primary" loading={isSubmitting} disabled={isSubmitting}>
+              {isEditMode ? "Сохранить" : "Опубликовать"}
+            </Button>
+            <Button to="/" variant="secondary">
               Выйти без сохранения
-            </Link>
+            </Button>
           </div>
         </form>
         </article>

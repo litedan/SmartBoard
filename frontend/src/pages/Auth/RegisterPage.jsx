@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import { Button } from "../../components/UI/Button";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./auth.css";
 
@@ -144,9 +145,9 @@ export function RegisterPage() {
           </label>
           {clientError ? <p className="auth-error">{clientError}</p> : null}
           {error ? <p className="auth-error">{error}</p> : null}
-          <button className="auth-submit" type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Создаём..." : "Создать аккаунт"}
-          </button>
+          <Button type="submit" variant="primary" loading={isSubmitting} disabled={isSubmitting} className="auth-submit">
+            Создать аккаунт
+          </Button>
         </form>
         <p className="auth-hint">
           Уже есть аккаунт? <Link to="/login">Войти</Link>

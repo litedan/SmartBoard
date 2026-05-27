@@ -19,6 +19,7 @@ from app.repositories.listing_repository import ListingRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.user_session_repository import UserSessionRepository
 from app.schemas.ad import AdListMeta, AdListResponse, AdRead, CategoryRead
+from app.services.cache import get_categories_cache, invalidate_ads_cache, set_categories_cache
 
 router = APIRouter(prefix="/ads", tags=["ads"])
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
@@ -71,6 +72,7 @@ def _map_listing_to_ad_read(
     author_name: str | None = None,
     author_phone: str | None = None,
     author_avatar_url: str | None = None,
+    author_created_at: datetime | None = None,
     is_favorite: bool = False,
 ) -> AdRead:
     return AdRead(
@@ -87,6 +89,7 @@ def _map_listing_to_ad_read(
         author_name=author_name,
         author_phone=author_phone,
         author_avatar_url=author_avatar_url,
+        author_created_at=author_created_at,
         is_favorite=is_favorite,
         is_active=listing.is_active,
         created_at=listing.created_at,
@@ -101,10 +104,19 @@ async def _get_optional_current_user(
     if not session_id:
         return None
 
+    from app.services.cache import get_session_user_id, set_session_cache
+
+    cached_user_id = await get_session_user_id(session_id)
+    if cached_user_id:
+        user = await UserRepository.get_by_id(session=db, obj_id=cached_user_id)
+        if user:
+            return user
+
     user_session = await UserSessionRepository.get_active_by_session_id(session=db, session_id=session_id)
     if not user_session:
         return None
 
+    await set_session_cache(session_id, user_session.user_id)
     return await UserRepository.get_by_id(session=db, obj_id=user_session.user_id)
 
 
@@ -138,13 +150,19 @@ async def get_ads(
     db: AsyncSession = Depends(get_db),
     session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ):
+    optional_user = await _get_optional_current_user(db=db, session_id=session_id)
+
+    base_filters = [Listing.is_active.is_(True)]
+    if optional_user is not None:
+        base_filters.append(Listing.user_id != optional_user.id)
+
     stmt = (
         select(Listing, Category.name, User.name, User.last_name, User.phone, User.avatar_url)
         .join(Category, Listing.category_id == Category.id, isouter=True)
         .join(User, Listing.user_id == User.id)
-        .where(Listing.is_active.is_(True))
+        .where(*base_filters)
     )
-    count_stmt = select(func.count()).select_from(Listing).where(Listing.is_active.is_(True))
+    count_stmt = select(func.count()).select_from(Listing).where(*base_filters)
 
     if query and query.strip():
         term = f"%{query.strip()}%"
@@ -189,7 +207,6 @@ async def get_ads(
     total = await db.scalar(count_stmt)
 
     listing_ids = [row[0].id for row in rows]
-    optional_user = await _get_optional_current_user(db=db, session_id=session_id)
     favorite_ids = await _get_favorite_ids(db=db, user_id=optional_user.id, listing_ids=listing_ids) if optional_user else set()
 
     items = [
@@ -209,8 +226,14 @@ async def get_ads(
 
 @router.get("/categories", response_model=list[CategoryRead])
 async def get_categories(db: AsyncSession = Depends(get_db)):
+    cached = await get_categories_cache()
+    if cached is not None:
+        return [CategoryRead.model_validate(item) for item in cached]
+
     categories = await CategoryRepository.get_all_sorted(session=db)
-    return [CategoryRead.model_validate(category) for category in categories]
+    payload = [CategoryRead.model_validate(category).model_dump(mode="json") for category in categories]
+    await set_categories_cache(payload)
+    return [CategoryRead.model_validate(item) for item in payload]
 
 
 @router.get("/my", response_model=AdListResponse)
@@ -341,6 +364,59 @@ async def get_user_public_listings(
     return AdListResponse(meta=AdListMeta(total=total or 0, limit=limit, offset=offset), items=items)
 
 
+@router.get("/{ad_id}/similar", response_model=AdListResponse)
+async def get_similar_ads(
+    ad_id: int,
+    limit: int = Query(default=12, ge=1, le=24),
+    db: AsyncSession = Depends(get_db),
+    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
+):
+    listing = await ListingRepository.get_by_id(session=db, obj_id=ad_id)
+    if not listing:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Объявление не найдено")
+
+    optional_user = await _get_optional_current_user(db=db, session_id=session_id)
+    base_filters = [
+        Listing.is_active.is_(True),
+        Listing.id != ad_id,
+    ]
+    if optional_user is not None:
+        base_filters.append(Listing.user_id != optional_user.id)
+
+    stmt = (
+        select(Listing, Category.name, User.name, User.last_name, User.phone, User.avatar_url)
+        .join(Category, Listing.category_id == Category.id, isouter=True)
+        .join(User, Listing.user_id == User.id)
+        .where(*base_filters)
+    )
+    count_stmt = select(func.count()).select_from(Listing).where(*base_filters)
+
+    if listing.category_id is not None:
+        category_filter = Listing.category_id == listing.category_id
+        stmt = stmt.where(category_filter)
+        count_stmt = count_stmt.where(category_filter)
+
+    stmt = stmt.order_by(Listing.created_at.desc()).limit(limit)
+    rows = (await db.execute(stmt)).all()
+    total = await db.scalar(count_stmt)
+
+    listing_ids = [row[0].id for row in rows]
+    favorite_ids = await _get_favorite_ids(db=db, user_id=optional_user.id, listing_ids=listing_ids) if optional_user else set()
+
+    items = [
+        _map_listing_to_ad_read(
+            listing=row[0],
+            category_name=row[1],
+            author_name=" ".join(part for part in [row[2], row[3]] if part).strip() or None,
+            author_phone=row[4],
+            author_avatar_url=row[5],
+            is_favorite=row[0].id in favorite_ids,
+        )
+        for row in rows
+    ]
+    return AdListResponse(meta=AdListMeta(total=total or 0, limit=limit, offset=0), items=items)
+
+
 @router.get("/{ad_id}", response_model=AdRead)
 async def get_ad_by_id(
     ad_id: int,
@@ -348,7 +424,15 @@ async def get_ad_by_id(
     session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ):
     stmt = (
-        select(Listing, Category.name, User.name, User.last_name, User.phone, User.avatar_url)
+        select(
+            Listing,
+            Category.name,
+            User.name,
+            User.last_name,
+            User.phone,
+            User.avatar_url,
+            User.created_at,
+        )
         .join(Category, Listing.category_id == Category.id, isouter=True)
         .join(User, Listing.user_id == User.id)
         .where(Listing.id == ad_id)
@@ -380,6 +464,7 @@ async def get_ad_by_id(
         author_name=" ".join(part for part in [row[2], row[3]] if part).strip() or None,
         author_phone=row[4],
         author_avatar_url=row[5],
+        author_created_at=row[6],
         is_favorite=is_favorite,
     )
 
@@ -448,6 +533,7 @@ async def create_ad(
         user_id=current_user.id,
         is_active=quantity_available_value > 0,
     )
+    await invalidate_ads_cache()
 
     return _map_listing_to_ad_read(
         listing=listing,
@@ -573,6 +659,7 @@ async def update_ad(
         )
 
     updated = await ListingRepository.update(session=db, obj=listing, **update_data)
+    await invalidate_ads_cache()
 
     category_name = None
     if updated.category_id:
@@ -602,6 +689,7 @@ async def delete_ad(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет прав на удаление")
 
     await ListingRepository.delete(session=db, obj=listing)
+    await invalidate_ads_cache()
 
 
 @router.post("/{ad_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)

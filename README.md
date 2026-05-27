@@ -46,7 +46,31 @@ git clone <repo-url>
 cd SmartBoard
 ```
 
-### 3.3 Настройка backend
+### 3.3 Запуск через Docker (рекомендуется)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Если миграции падали раньше (например `relation "users" does not exist`), сбросьте том БД и поднимите заново:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Сервисы:
+
+- Frontend: http://localhost:8080
+- Backend API: http://localhost:8000
+- Swagger: http://localhost:8000/docs
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+Чат работает через WebSocket: `ws://localhost:8080/api/v1/chat/conversations/{id}/messages` (проксируется nginx → backend).
+
+### 3.4 Настройка backend (без Docker)
 
 ```bash
 cd backend
@@ -142,6 +166,26 @@ Backend:
 ```bash
 cd backend
 uvicorn app.main:app --reload
+```
+
+Линтер и форматтер (backend):
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+ruff check app
+ruff check app --fix
+black app
+```
+
+Пример логирования в коде (backend):
+
+```python
+import logging
+
+logger = logging.getLogger("smartboard")
+logger.info("User registered successfully")
+logger.warning("Redis is unavailable")
 ```
 
 Frontend:

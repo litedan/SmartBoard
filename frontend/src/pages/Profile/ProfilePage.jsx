@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import { BackButton } from "../../components/Layout/BackButton";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
+import { Button } from "../../components/UI/Button";
 import { deleteAd, fetchMyAds, fetchMyFavorites, removeFavorite, updateAd } from "../../shared/api/ads";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./profile.css";
@@ -312,9 +314,7 @@ export function ProfilePage() {
   return (
     <section className="profile-page">
       <Breadcrumbs items={[{ label: "Каталог", to: "/" }, { label: "Кабинет" }]} />
-      <button type="button" className="profile-back" onClick={() => navigate(-1)}>
-        Назад
-      </button>
+      <BackButton fallback="/" />
 
       <div className="profile-card profile-head">
         <div className="profile-avatar-wrap">
@@ -433,9 +433,9 @@ export function ProfilePage() {
                 required
               />
             </label>
-            <button type="submit" disabled={isSavingProfile}>
-              {isSavingProfile ? "Сохраняем..." : "Сохранить изменения"}
-            </button>
+            <Button type="submit" variant="primary" loading={isSavingProfile} disabled={isSavingProfile}>
+              Сохранить изменения
+            </Button>
           </form>
         </article>
 
@@ -472,9 +472,9 @@ export function ProfilePage() {
                 required
               />
             </label>
-            <button type="submit" disabled={isSavingPassword}>
-              {isSavingPassword ? "Обновляем..." : "Обновить пароль"}
-            </button>
+            <Button type="submit" variant="primary" loading={isSavingPassword} disabled={isSavingPassword}>
+              Обновить пароль
+            </Button>
           </form>
         </article>
       </div>

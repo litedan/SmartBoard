@@ -1,11 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.deps import get_ws_current_user
 from app.api.v1.endpoints.auth import get_current_user_from_session
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.models.chat_message import ChatMessage
 from app.models.listing import Listing
 from app.models.user import User
@@ -25,6 +27,32 @@ from app.schemas.chat import (
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[int, WebSocket] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: int):
+        self.active_connections.pop(user_id, None)
+
+    async def send_json(self, user_id: int, payload: dict) -> bool:
+        websocket = self.active_connections.get(user_id)
+        if not websocket:
+            return False
+        try:
+            await websocket.send_json(payload)
+            return True
+        except Exception:
+            self.disconnect(user_id)
+            return False
+
+
+manager = ConnectionManager()
+
+
 @router.post("/conversations/by-listing/{listing_id}", response_model=ChatConversationRead)
 async def create_or_get_conversation_by_listing(
     listing_id: int,
@@ -36,31 +64,41 @@ async def create_or_get_conversation_by_listing(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Объявление не найдено")
 
     if listing.user_id == current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Нельзя начать чат по своему объявлению",
+        conversations = await ChatConversationRepository.list_for_listing_as_seller(
+            session=db,
+            listing_id=listing.id,
+            seller_id=current_user.id,
         )
-
-    conversation = await ChatConversationRepository.find_by_listing_and_participants(
-        session=db,
-        listing_id=listing.id,
-        buyer_id=current_user.id,
-        seller_id=listing.user_id,
-    )
-
-    if not conversation:
-        conversation = await ChatConversationRepository.create(
+        if not conversations:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пока никто не написал по этому объявлению",
+            )
+        conversation = conversations[0]
+        other_user = await db.get(User, conversation.buyer_id)
+        if not other_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Покупатель не найден")
+    else:
+        conversation = await ChatConversationRepository.find_by_listing_and_participants(
             session=db,
             listing_id=listing.id,
             buyer_id=current_user.id,
             seller_id=listing.user_id,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
         )
 
-    seller = await db.get(User, conversation.seller_id)
-    if not seller:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+        if not conversation:
+            conversation = await ChatConversationRepository.create(
+                session=db,
+                listing_id=listing.id,
+                buyer_id=current_user.id,
+                seller_id=listing.user_id,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+
+        other_user = await db.get(User, conversation.seller_id)
+        if not other_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Продавец не найден")
 
     return ChatConversationRead(
         id=conversation.id,
@@ -68,10 +106,10 @@ async def create_or_get_conversation_by_listing(
         listing_title=listing.title,
         listing_image_url=listing.image_url,
         other_user=ChatParticipant(
-            id=seller.id,
-            name=seller.name,
-            last_name=seller.last_name,
-            avatar_url=seller.avatar_url,
+            id=other_user.id,
+            name=other_user.name,
+            last_name=other_user.last_name,
+            avatar_url=other_user.avatar_url,
         ),
         updated_at=conversation.updated_at,
     )
@@ -181,39 +219,6 @@ async def get_conversation_messages(
     )
 
 
-@router.post("/conversations/{conversation_id}/messages", response_model=ChatMessageRead)
-async def send_message(
-    conversation_id: int,
-    payload: ChatMessageCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user_from_session),
-):
-    conversation = await ChatConversationRepository.get_for_user(
-        session=db,
-        conversation_id=conversation_id,
-        user_id=current_user.id,
-    )
-    if not conversation:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
-
-    message = await ChatMessageRepository.create(
-        session=db,
-        conversation_id=conversation.id,
-        sender_id=current_user.id,
-        text=payload.text,
-        is_read=False,
-        created_at=datetime.utcnow(),
-    )
-
-    await ChatConversationRepository.update(
-        session=db,
-        obj=conversation,
-        updated_at=message.created_at,
-    )
-
-    return ChatMessageRead.model_validate(message)
-
-
 @router.post("/conversations/{conversation_id}/read", response_model=ChatReadUpdateResponse)
 async def mark_conversation_read(
     conversation_id: int,
@@ -234,3 +239,80 @@ async def mark_conversation_read(
         user_id=current_user.id,
     )
     return ChatReadUpdateResponse(updated=updated)
+
+
+@router.websocket("/conversations/{conversation_id}/messages")
+async def websocket_endpoint(websocket: WebSocket, conversation_id: int):
+    async with SessionLocal() as db:
+        current_user = await get_ws_current_user(websocket, db)
+        if not current_user:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        conversation = await ChatConversationRepository.get_for_user(
+            session=db,
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+        )
+        if not conversation:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        await ChatMessageRepository.mark_as_read(
+            session=db,
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+        )
+
+        other_user_id = (
+            conversation.seller_id if conversation.buyer_id == current_user.id else conversation.buyer_id
+        )
+
+    await manager.connect(current_user.id, websocket)
+
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_json()
+                message_create = ChatMessageCreate.model_validate(payload)
+            except ValidationError as exc:
+                await websocket.send_json({"type": "error", "message": str(exc.errors()[0]["msg"])})
+                continue
+            except ValueError:
+                await websocket.send_json({"type": "error", "message": "Некорректный JSON"})
+                continue
+
+            async with SessionLocal() as db:
+                conversation = await ChatConversationRepository.get_for_user(
+                    session=db,
+                    conversation_id=conversation_id,
+                    user_id=current_user.id,
+                )
+                if not conversation:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    break
+
+                message = await ChatMessageRepository.create(
+                    session=db,
+                    conversation_id=conversation.id,
+                    sender_id=current_user.id,
+                    text=message_create.text,
+                    is_read=False,
+                    created_at=datetime.utcnow(),
+                )
+
+                await ChatConversationRepository.update(
+                    session=db,
+                    obj=conversation,
+                    updated_at=message.created_at,
+                )
+
+                message_read = ChatMessageRead.model_validate(message)
+                envelope = {"type": "message", "data": message_read.model_dump(mode="json")}
+
+            await manager.send_json(current_user.id, envelope)
+            await manager.send_json(other_user_id, envelope)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(current_user.id)

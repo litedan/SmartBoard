@@ -9,10 +9,10 @@ from app.db.session import get_db
 from app.repositories.user_repository import UserRepository
 from app.repositories.user_session_repository import UserSessionRepository
 from app.schemas.user import UserCreate, UserLogin, UserRead
+from app.api.v1.deps import SESSION_COOKIE_NAME, get_user_from_session_id
+from app.services.cache import delete_session_cache, set_session_cache
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-SESSION_COOKIE_NAME = "session_id"
 SESSION_TTL_DAYS = 7
 SESSION_MAX_AGE_SECONDS = SESSION_TTL_DAYS * 24 * 60 * 60
 
@@ -21,20 +21,9 @@ async def get_current_user_from_session(
     db: AsyncSession = Depends(get_db),
     session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ):
-    if not session_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
-
-    user_session = await UserSessionRepository.get_active_by_session_id(
-        session=db,
-        session_id=session_id,
-    )
-    if not user_session:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия недействительна")
-
-    user = await UserRepository.get_by_id(session=db, obj_id=user_session.user_id)
+    user = await get_user_from_session_id(db, session_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден")
-
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не авторизован")
     return user
 
 
@@ -84,6 +73,7 @@ async def login_user(
         user_agent=request.headers.get("user-agent"),
         expires_at=expires_at,
     )
+    await set_session_cache(session_id, user.id)
 
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
@@ -105,6 +95,7 @@ async def logout_user(
     session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ):
     if session_id:
+        await delete_session_cache(session_id)
         user_session = await UserSessionRepository.find_one_or_none(session=db, session_id=session_id)
         if user_session and user_session.revoked_at is None:
             await UserSessionRepository.update(

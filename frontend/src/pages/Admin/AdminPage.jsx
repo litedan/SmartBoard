@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { BackButton } from "../../components/Layout/BackButton";
+import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./admin.css";
 
@@ -352,9 +354,8 @@ export function AdminPage() {
 
   return (
     <section className="admin-page">
-      <button type="button" className="admin-back" onClick={() => navigate(-1)}>
-        Назад
-      </button>
+      <Breadcrumbs items={[{ label: "Каталог", to: "/" }, { label: "Админ-панель" }]} />
+      <BackButton fallback="/" />
       <div className="admin-header">
         <div>
           <h1>Админ-панель</h1>
