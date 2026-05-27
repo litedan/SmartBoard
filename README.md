@@ -2,7 +2,7 @@
 
 ## 1. Технологический стек
 
-- Frontend: React 18, TypeScript, Vite, React Router
+- Frontend: React 18, Vite, React Router
 - Backend: FastAPI, Pydantic v2, SQLAlchemy 2, Alembic
 - База данных: PostgreSQL
 
@@ -118,48 +118,7 @@ Frontend по умолчанию запускается на `http://localhost:5
 - Для локальной разработки обычно нужно настроить прокси в Vite или использовать абсолютный URL backend, когда появятся реальные запросы из frontend.
 - Не коммитьте реальные секреты в `.env`. Для команды используйте шаблон `.env.example`.
 
-## 5. Командный workflow
-
-### 5.1 Бранч-стратегия
-
-- `main` - стабильная ветка
-- `develop` - интеграционная ветка (если команда использует)
-- feature-ветки: `feature/<short-name>`
-- bugfix-ветки: `fix/<short-name>`
-- hotfix-ветки: `hotfix/<short-name>`
-
-Пример:
-
-```bash
-git checkout -b feature/auth-refresh-token
-```
-
-### 5.2 Правила коммитов
-
-Рекомендуемый формат:
-
-```text
-type(scope): short description
-```
-
-Типы:
-
-- `feat` - новая функциональность
-- `fix` - исправление бага
-- `refactor` - рефакторинг без изменения поведения
-- `test` - тесты
-- `docs` - документация
-- `chore` - технические задачи
-
-Примеры:
-
-```text
-feat(auth): add refresh token endpoint
-fix(profile): handle missing avatar fallback
-docs(readme): add team workflow section
-```
-
-### 6. Полезные команды
+### 5. Полезные команды
 
 Backend:
 
