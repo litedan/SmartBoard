@@ -3,10 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.auth import get_current_user_from_session
 from app.db.session import get_db
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.repositories.listing_repository import ListingRepository
 from app.schemas.report import ReportCreate, ReportCreateResponse
-from app.services.cache import push_report
+from app.services.cache import ReportDuplicateError, push_report
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -21,9 +21,28 @@ async def create_report(
     if not listing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Объявление не найдено")
 
-    await push_report(
-        listing_id=listing.id,
-        user_id=current_user.id,
-        reason=payload.reason,
-    )
+    if current_user.role == UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Администратор не может отправлять жалобы",
+        )
+
+    if listing.user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя пожаловаться на своё объявление",
+        )
+
+    try:
+        await push_report(
+            listing_id=listing.id,
+            user_id=current_user.id,
+            reason=payload.reason,
+        )
+    except ReportDuplicateError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Вы уже отправляли жалобу на это объявление",
+        )
+
     return ReportCreateResponse(message="Жалоба принята. Модераторы рассмотрят её в ближайшее время.")

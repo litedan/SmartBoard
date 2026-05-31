@@ -7,7 +7,8 @@ from fastapi import APIRouter, Cookie, Depends, File, Form, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints.auth import SESSION_COOKIE_NAME, get_current_user_from_session
+from app.api.v1.deps import SESSION_COOKIE_NAME
+from app.api.v1.endpoints.auth import get_current_user_from_session
 from app.db.session import get_db
 from app.models.category import Category
 from app.models.favorite import Favorite
@@ -25,6 +26,8 @@ router = APIRouter(prefix="/ads", tags=["ads"])
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024
 LISTINGS_DIR = Path(__file__).resolve().parents[3] / "static" / "listings"
+MODERATION_APPROVED = "approved"
+MODERATION_PENDING = "pending"
 
 
 def _parse_decimal(value: str | None, field_name: str) -> Decimal | None:
@@ -92,6 +95,7 @@ def _map_listing_to_ad_read(
         author_created_at=author_created_at,
         is_favorite=is_favorite,
         is_active=listing.is_active,
+        moderation_status=getattr(listing, "moderation_status", None),
         created_at=listing.created_at,
         updated_at=listing.updated_at,
     )
@@ -152,7 +156,7 @@ async def get_ads(
 ):
     optional_user = await _get_optional_current_user(db=db, session_id=session_id)
 
-    base_filters = [Listing.is_active.is_(True)]
+    base_filters = [Listing.is_active.is_(True), Listing.moderation_status == MODERATION_APPROVED]
     if optional_user is not None:
         base_filters.append(Listing.user_id != optional_user.id)
 
@@ -333,7 +337,11 @@ async def get_user_public_listings(
     stmt = (
         select(Listing, Category.name)
         .join(Category, Listing.category_id == Category.id, isouter=True)
-        .where(Listing.user_id == user_id, Listing.is_active.is_(True))
+        .where(
+            Listing.user_id == user_id,
+            Listing.is_active.is_(True),
+            Listing.moderation_status == MODERATION_APPROVED,
+        )
         .order_by(Listing.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -342,7 +350,11 @@ async def get_user_public_listings(
     count_stmt = (
         select(func.count())
         .select_from(Listing)
-        .where(Listing.user_id == user_id, Listing.is_active.is_(True))
+        .where(
+            Listing.user_id == user_id,
+            Listing.is_active.is_(True),
+            Listing.moderation_status == MODERATION_APPROVED,
+        )
     )
 
     rows = (await db.execute(stmt)).all()
@@ -378,6 +390,7 @@ async def get_similar_ads(
     optional_user = await _get_optional_current_user(db=db, session_id=session_id)
     base_filters = [
         Listing.is_active.is_(True),
+        Listing.moderation_status == MODERATION_APPROVED,
         Listing.id != ad_id,
     ]
     if optional_user is not None:
@@ -446,6 +459,9 @@ async def get_ad_by_id(
     optional_user = await _get_optional_current_user(db=db, session_id=session_id)
 
     can_see_inactive = bool(optional_user and optional_user.id == listing.user_id)
+    can_see_unapproved = can_see_inactive
+    if listing.moderation_status != MODERATION_APPROVED and not can_see_unapproved:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Объявление не найдено")
     if not listing.is_active and not can_see_inactive:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Объявление не найдено")
 
@@ -531,7 +547,8 @@ async def create_ad(
         quantity_total=quantity_total_value,
         quantity_available=quantity_available_value,
         user_id=current_user.id,
-        is_active=quantity_available_value > 0,
+        is_active=False,
+        moderation_status=MODERATION_PENDING,
     )
     await invalidate_ads_cache()
 

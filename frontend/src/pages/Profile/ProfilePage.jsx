@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { BackButton } from "../../components/Layout/BackButton";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
 import { Button } from "../../components/UI/Button";
+import { useToast } from "../../components/UI/ToastProvider";
 import { deleteAd, fetchMyAds, fetchMyFavorites, removeFavorite, updateAd } from "../../shared/api/ads";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import "./profile.css";
@@ -45,6 +46,7 @@ function getListingStatusLabel(listing) {
 
 export function ProfilePage() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
@@ -54,10 +56,11 @@ export function ProfilePage() {
   const [myListings, setMyListings] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [passwordForm, setPasswordForm] = useState({
-    currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
+  const [isNewPasswordVisible, setIsNewPasswordVisible] = useState(false);
+  const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -132,6 +135,18 @@ export function ProfilePage() {
     setPasswordForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function hasSpaces(value) {
+    return /\s/.test(value);
+  }
+
+  function normalizePhone(value) {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length !== 11 || !["7", "8"].includes(digits[0])) {
+      return null;
+    }
+    return `+7${digits.slice(1)}`;
+  }
+
   async function refreshListingsAndFavorites() {
     const [listingsResponse, favoritesResponse] = await Promise.all([
       fetchMyAds({ limit: 100, offset: 0 }),
@@ -146,15 +161,24 @@ export function ProfilePage() {
     setError(null);
     setSuccess(null);
 
+    const normalizedPhone = normalizePhone(profile.phone);
     const payload = {
       name: profile.name.trim(),
       last_name: profile.lastName.trim(),
       email: profile.email.trim(),
-      phone: profile.phone.trim(),
+      phone: normalizedPhone ?? profile.phone.trim(),
     };
 
     if (!payload.name || !payload.last_name || !payload.email || !payload.phone) {
-      setError("Заполните имя, фамилию, телефон и email");
+      showToast("Заполните имя, фамилию, телефон и email", { type: "info" });
+      return;
+    }
+    if (hasSpaces(payload.name) || hasSpaces(payload.last_name)) {
+      showToast("Имя и ник не должны содержать пробелы", { type: "info" });
+      return;
+    }
+    if (!normalizedPhone) {
+      showToast("Введите телефон в формате +7XXXXXXXXXX", { type: "info" });
       return;
     }
 
@@ -170,9 +194,13 @@ export function ProfilePage() {
         email: response.email ?? "",
         phone: response.phone ?? "",
       });
-      setSuccess("Профиль обновлён");
+      showToast("Профиль обновлён", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось сохранить профиль");
+      if (requestError instanceof ApiError && requestError.status === 409) {
+        showToast("Этот email уже используется другим аккаунтом", { type: "error" });
+      } else {
+        showToast(requestError instanceof ApiError ? requestError.message : "Не удалось сохранить профиль", { type: "error" });
+      }
     } finally {
       setIsSavingProfile(false);
     }
@@ -183,16 +211,16 @@ export function ProfilePage() {
     setError(null);
     setSuccess(null);
 
-    if (!passwordForm.currentPassword || !passwordForm.newPassword) {
-      setError("Введите текущий и новый пароль");
+    if (!passwordForm.newPassword) {
+      showToast("Введите новый пароль", { type: "info" });
       return;
     }
     if (passwordForm.newPassword.length < 6) {
-      setError("Новый пароль должен быть не менее 6 символов");
+      showToast("Новый пароль должен быть не менее 6 символов", { type: "info" });
       return;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setError("Новый пароль и подтверждение не совпадают");
+      showToast("Новый пароль и подтверждение не совпадают", { type: "info" });
       return;
     }
 
@@ -201,14 +229,13 @@ export function ProfilePage() {
       await apiRequest("/profile/me", {
         method: "PATCH",
         body: JSON.stringify({
-          current_password: passwordForm.currentPassword,
           new_password: passwordForm.newPassword,
         }),
       });
-      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setSuccess("Пароль успешно изменён");
+      setPasswordForm({ newPassword: "", confirmPassword: "" });
+      showToast("Пароль успешно изменён", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось изменить пароль");
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось изменить пароль", { type: "error" });
     } finally {
       setIsSavingPassword(false);
     }
@@ -222,8 +249,7 @@ export function ProfilePage() {
     }
 
     if (!selectedFile.type.startsWith("image/")) {
-      setError("Выберите изображение");
-      setSuccess(null);
+      showToast("Выберите изображение", { type: "info" });
       return;
     }
 
@@ -238,9 +264,27 @@ export function ProfilePage() {
         body: formData,
       });
       setAvatarUrl(getAvatarSrc(response.avatar_url));
-      setSuccess("Фото профиля обновлено");
+      showToast("Фото профиля обновлено", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить фото");
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить фото", { type: "error" });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
+
+  async function handleAvatarDelete() {
+    if (!avatarUrl) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    setIsUploadingAvatar(true);
+    try {
+      const response = await apiRequest("/profile/me/avatar", { method: "DELETE" });
+      setAvatarUrl(getAvatarSrc(response?.avatar_url));
+      showToast("Фото профиля удалено", { type: "success" });
+    } catch (requestError) {
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось удалить фото", { type: "error" });
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -248,14 +292,12 @@ export function ProfilePage() {
 
   async function handleListingToggle(listing) {
     setIsManagingListings(true);
-    setError(null);
-    setSuccess(null);
     try {
       await updateAd(listing.id, { is_active: !listing.is_active });
       await refreshListingsAndFavorites();
-      setSuccess("Статус объявления обновлён");
+      showToast("Статус объявления обновлён", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось обновить статус");
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось обновить статус", { type: "error" });
     } finally {
       setIsManagingListings(false);
     }
@@ -267,14 +309,12 @@ export function ProfilePage() {
     }
 
     setIsManagingListings(true);
-    setError(null);
-    setSuccess(null);
     try {
       await deleteAd(listingId);
       await refreshListingsAndFavorites();
-      setSuccess("Объявление удалено");
+      showToast("Объявление удалено", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось удалить объявление");
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось удалить объявление", { type: "error" });
     } finally {
       setIsManagingListings(false);
     }
@@ -282,14 +322,12 @@ export function ProfilePage() {
 
   async function handleRemoveFavorite(listingId) {
     setIsManagingListings(true);
-    setError(null);
-    setSuccess(null);
     try {
       await removeFavorite(listingId);
       await refreshListingsAndFavorites();
-      setSuccess("Удалено из избранного");
+      showToast("Удалено из избранного", { type: "success" });
     } catch (requestError) {
-      setError(requestError instanceof ApiError ? requestError.message : "Не удалось удалить из избранного");
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось удалить из избранного", { type: "error" });
     } finally {
       setIsManagingListings(false);
     }
@@ -336,6 +374,11 @@ export function ProfilePage() {
               disabled={isUploadingAvatar}
             />
           </label>
+          {avatarUrl ? (
+            <button type="button" className="profile-upload-button" onClick={handleAvatarDelete} disabled={isUploadingAvatar}>
+              Удалить фото
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -344,12 +387,17 @@ export function ProfilePage() {
         <div className="profile-listings">
           {myListings.map((listing) => (
             <article key={listing.id} className="profile-listings__item">
-              <div>
+              <div className="profile-listings__main">
+                <div className="profile-listings__thumb" aria-hidden="true">
+                  {listing.image_url ? <img src={listing.image_url} alt="" /> : <span>📷</span>}
+                </div>
+                <div>
                 <h4>
                   <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
                 </h4>
                 <p>{formatPrice(listing.price)}</p>
                 <small>{getListingStatusLabel(listing)}</small>
+                </div>
               </div>
               <div className="profile-listings__actions">
                 <Link to={`/ads/${listing.id}/edit`}>Редактировать</Link>
@@ -375,12 +423,17 @@ export function ProfilePage() {
         <div className="profile-listings">
           {favorites.map((listing) => (
             <article key={listing.id} className="profile-listings__item">
-              <div>
+              <div className="profile-listings__main">
+                <div className="profile-listings__thumb" aria-hidden="true">
+                  {listing.image_url ? <img src={listing.image_url} alt="" /> : <span>📷</span>}
+                </div>
+                <div>
                 <h4>
                   <Link to={`/ads/${listing.id}`}>{listing.title}</Link>
                 </h4>
                 <p>{formatPrice(listing.price)}</p>
                 <small>{listing.author_name ?? "Пользователь"}</small>
+                </div>
               </div>
               <div className="profile-listings__actions">
                 <button type="button" onClick={() => handleRemoveFavorite(listing.id)} disabled={isManagingListings}>
@@ -404,6 +457,7 @@ export function ProfilePage() {
                 value={profile.name}
                 onChange={(event) => updateProfileField("name", event.target.value)}
                 required
+                pattern="^\S+$"
               />
             </label>
             <label>
@@ -413,6 +467,7 @@ export function ProfilePage() {
                 value={profile.lastName}
                 onChange={(event) => updateProfileField("lastName", event.target.value)}
                 required
+                pattern="^\S+$"
               />
             </label>
             <label>
@@ -422,6 +477,7 @@ export function ProfilePage() {
                 value={profile.phone}
                 onChange={(event) => updateProfileField("phone", event.target.value)}
                 required
+                placeholder="+79991234567"
               />
             </label>
             <label>
@@ -443,34 +499,44 @@ export function ProfilePage() {
           <h3>Смена пароля</h3>
           <form className="profile-form" onSubmit={handlePasswordSubmit}>
             <label>
-              Текущий пароль
-              <input
-                type="password"
-                value={passwordForm.currentPassword}
-                onChange={(event) => updatePasswordField("currentPassword", event.target.value)}
-                minLength={6}
-                required
-              />
-            </label>
-            <label>
               Новый пароль
-              <input
-                type="password"
-                value={passwordForm.newPassword}
-                onChange={(event) => updatePasswordField("newPassword", event.target.value)}
-                minLength={6}
-                required
-              />
+              <span className="profile-password">
+                <input
+                  type={isNewPasswordVisible ? "text" : "password"}
+                  value={passwordForm.newPassword}
+                  onChange={(event) => updatePasswordField("newPassword", event.target.value)}
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  className="profile-password__toggle"
+                  aria-label={isNewPasswordVisible ? "Скрыть пароль" : "Показать пароль"}
+                  onClick={() => setIsNewPasswordVisible((prev) => !prev)}
+                >
+                  {isNewPasswordVisible ? "🙈" : "👁"}
+                </button>
+              </span>
             </label>
             <label>
               Подтвердите новый пароль
-              <input
-                type="password"
-                value={passwordForm.confirmPassword}
-                onChange={(event) => updatePasswordField("confirmPassword", event.target.value)}
-                minLength={6}
-                required
-              />
+              <span className="profile-password">
+                <input
+                  type={isConfirmPasswordVisible ? "text" : "password"}
+                  value={passwordForm.confirmPassword}
+                  onChange={(event) => updatePasswordField("confirmPassword", event.target.value)}
+                  minLength={6}
+                  required
+                />
+                <button
+                  type="button"
+                  className="profile-password__toggle"
+                  aria-label={isConfirmPasswordVisible ? "Скрыть пароль" : "Показать пароль"}
+                  onClick={() => setIsConfirmPasswordVisible((prev) => !prev)}
+                >
+                  {isConfirmPasswordVisible ? "🙈" : "👁"}
+                </button>
+              </span>
             </label>
             <Button type="submit" variant="primary" loading={isSavingPassword} disabled={isSavingPassword}>
               Обновить пароль
@@ -478,9 +544,6 @@ export function ProfilePage() {
           </form>
         </article>
       </div>
-
-      {error ? <p className="profile-feedback profile-error">{error}</p> : null}
-      {success ? <p className="profile-feedback profile-success">{success}</p> : null}
 
       <button type="button" className="profile-logout" onClick={handleLogout}>
         Выйти из аккаунта

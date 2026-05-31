@@ -6,3 +6,10 @@ export async function submitListingReport(listingId, reason = "") {
     body: JSON.stringify({ listing_id: listingId, reason }),
   });
 }
+
+export async function updateReportStatus(reportId, status) {
+  return apiRequest(`/admin/reports/${reportId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}

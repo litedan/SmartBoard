@@ -85,10 +85,14 @@ export function AdDetailsPage() {
   const [ad, setAd] = useState(null);
   const [similarAds, setSimilarAds] = useState([]);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
   const [error, setError] = useState(null);
+  const [hasReported, setHasReported] = useState(false);
 
   const numericAdId = useMemo(() => Number(adId), [adId]);
   const isOwner = ad && currentUserId !== null && ad.user_id === currentUserId;
+  const isAdmin = currentUserRole === "admin";
+  const canReport = currentUserId !== null && !isOwner && !isAdmin;
   const images = useMemo(() => (ad?.image_url ? [ad.image_url] : []), [ad]);
 
   useEffect(() => {
@@ -134,10 +138,12 @@ export function AdDetailsPage() {
         const me = await apiRequest("/auth/me");
         if (mounted) {
           setCurrentUserId(me?.id ?? null);
+          setCurrentUserRole(me?.role ?? null);
         }
       } catch {
         if (mounted) {
           setCurrentUserId(null);
+          setCurrentUserRole(null);
         }
       }
     }
@@ -190,16 +196,25 @@ export function AdDetailsPage() {
       return;
     }
 
+    if (hasReported) {
+      showToast("Вы уже отправляли жалобу на это объявление", { type: "info" });
+      return;
+    }
+
     try {
       const response = await submitListingReport(ad.id);
+      setHasReported(true);
       showToast(response?.message ?? "Жалоба отправлена модераторам", { type: "success" });
     } catch (requestError) {
       if (requestError instanceof ApiError && requestError.status === 401) {
         navigate("/login", { replace: true });
         return;
       }
+      if (requestError instanceof ApiError && requestError.status === 409) {
+        setHasReported(true);
+      }
       showToast(requestError instanceof ApiError ? requestError.message : "Не удалось отправить жалобу", {
-        type: "error",
+        type: requestError instanceof ApiError && requestError.status === 409 ? "info" : "error",
       });
     }
   }
@@ -247,17 +262,29 @@ export function AdDetailsPage() {
           </div>
 
           <aside className="ad-layout__info">
-            <span className="ad-category">{ad.category_name ?? "Категория"}</span>
+            {ad.category_id ? (
+              <Link to={`/?categoryId=${ad.category_id}`} className="ad-category ad-category--link">
+                {ad.category_name ?? "Категория"}
+              </Link>
+            ) : (
+              <span className="ad-category">Без категории</span>
+            )}
             <h1 className="ad-title">{ad.title}</h1>
             <p className="ad-price">{formatPrice(ad.price)}</p>
 
             <div className="ad-actions">
-              <Button type="button" variant="primary" className="ad-btn" onClick={handleShowPhone}>
-                {phoneVisible && ad.author_phone ? ad.author_phone : "Показать телефон"}
-              </Button>
+              {currentUserId === null ? (
+                <Button to="/login" variant="primary" className="ad-btn">
+                  Войдите, чтобы связаться
+                </Button>
+              ) : (
+                <Button type="button" variant="primary" className="ad-btn" onClick={handleShowPhone}>
+                  {phoneVisible && ad.author_phone ? ad.author_phone : "Показать телефон"}
+                </Button>
+              )}
               {currentUserId === null ? (
                 <Button to="/login" variant="secondary" className="ad-btn">
-                  Написать продавцу
+                  Войти и написать
                 </Button>
               ) : (
                 <Button to={chatLink} variant="secondary" className="ad-btn">
@@ -275,9 +302,11 @@ export function AdDetailsPage() {
               </button>
             </div>
 
-            <button type="button" className="ad-report" onClick={handleReport}>
-              Пожаловаться
-            </button>
+            {canReport ? (
+              <button type="button" className="ad-report" onClick={handleReport} disabled={hasReported}>
+                {hasReported ? "Жалоба уже отправлена" : "Пожаловаться"}
+              </button>
+            ) : null}
           </aside>
         </div>
 

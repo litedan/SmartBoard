@@ -9,24 +9,38 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [clientError, setClientError] = useState(null);
 
+  function validate(nextEmail, nextPassword) {
+    const normalizedEmail = nextEmail.trim();
+    if (!normalizedEmail) {
+      return "Введите email";
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return "Введите корректный email";
+    }
+    if (/\s/.test(nextPassword)) {
+      return "Пароль не должен содержать пробелы";
+    }
+    if (nextPassword.length < 6) {
+      return "Пароль должен быть не менее 6 символов";
+    }
+    return null;
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError(null);
-    setClientError(null);
+    const nextClientError = validate(email, password);
+    setClientError(nextClientError);
+    if (nextClientError) {
+      return;
+    }
 
     const normalizedEmail = email.trim();
-    if (!normalizedEmail) {
-      setClientError("Введите email");
-      return;
-    }
-    if (password.length < 6) {
-      setClientError("Пароль должен быть не менее 6 символов");
-      return;
-    }
 
     setIsSubmitting(true);
 
@@ -35,6 +49,7 @@ export function LoginPage() {
         method: "POST",
         body: JSON.stringify({ email: normalizedEmail, password }),
       });
+      window.dispatchEvent(new CustomEvent("smartboard:auth-changed"));
       navigate("/", { replace: true });
     } catch (requestError) {
       if (requestError instanceof ApiError) {
@@ -59,9 +74,10 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={(event) => {
-                setEmail(event.target.value);
+                const nextEmail = event.target.value;
+                setEmail(nextEmail);
                 setError(null);
-                setClientError(null);
+                setClientError(validate(nextEmail, password));
               }}
               required
               autoComplete="email"
@@ -70,24 +86,38 @@ export function LoginPage() {
           </label>
           <label className="auth-field">
             Пароль
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                setError(null);
-                setClientError(null);
-              }}
-              required
-              minLength={6}
-              autoComplete="current-password"
-              placeholder="Минимум 6 символов"
-            />
+            <span className="auth-password">
+              <input
+                type={isPasswordVisible ? "text" : "password"}
+                value={password}
+                onChange={(event) => {
+                  const nextPassword = event.target.value;
+                  setPassword(nextPassword);
+                  setError(null);
+                  setClientError(validate(email, nextPassword));
+                }}
+                required
+                minLength={6}
+                autoComplete="current-password"
+                placeholder="Минимум 6 символов"
+              />
+              <button
+                type="button"
+                className="auth-password__toggle"
+                aria-label={isPasswordVisible ? "Скрыть пароль" : "Показать пароль"}
+                onClick={() => setIsPasswordVisible((prev) => !prev)}
+              >
+                {isPasswordVisible ? "🙈" : "👁"}
+              </button>
+            </span>
           </label>
           {clientError ? <p className="auth-error">{clientError}</p> : null}
           {error ? <p className="auth-error">{error}</p> : null}
           <Button type="submit" variant="primary" loading={isSubmitting} disabled={isSubmitting} className="auth-submit">
             Войти
+          </Button>
+          <Button type="button" variant="secondary" className="auth-submit" onClick={() => navigate("/", { replace: true })}>
+            Продолжить как гость
           </Button>
         </form>
         <p className="auth-hint">

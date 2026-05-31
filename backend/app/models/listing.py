@@ -17,6 +17,8 @@ class Listing(Base):
     quantity_available = Column(Integer, nullable=False, default=1)
     views = Column(Integer, default=0)
     is_active = Column(Boolean, default=True, nullable=False)
+    moderation_status = Column(String(20), nullable=False, default="pending")
+    moderated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

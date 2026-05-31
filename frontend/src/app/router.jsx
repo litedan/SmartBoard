@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { RequireAuth } from "../components/Auth/RequireAuth";
 import { AppLayout } from "../components/Layout/AppLayout";
+import { ScrollRestoration } from "../components/Layout/ScrollRestoration";
 import { AdCreateEditPage } from "../pages/Ad/AdCreateEditPage";
 import { AdDetailsPage } from "../pages/Ad/AdDetailsPage";
 import { AdminPage } from "../pages/Admin/AdminPage";
@@ -15,6 +16,7 @@ import { UserPublicPage } from "../pages/User/UserPublicPage";
 export function AppRouter() {
   return (
     <BrowserRouter>
+      <ScrollRestoration />
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<HomePage />} />
@@ -36,9 +38,30 @@ export function AppRouter() {
           />
           <Route path="/ads/:adId" element={<AdDetailsPage />} />
           <Route path="/users/:userId" element={<UserPublicPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/chat" element={<ChatPage />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route
+            path="/profile"
+            element={
+              <RequireAuth>
+                <ProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <RequireAuth>
+                <ChatPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth>
+                <AdminPage />
+              </RequireAuth>
+            }
+          />
         </Route>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { BackButton } from "../../components/Layout/BackButton";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
+import { useToast } from "../../components/UI/ToastProvider";
 import { ApiError, apiRequest } from "../../shared/api/client";
+import { updateReportStatus } from "../../shared/api/reports";
 import "./admin.css";
 
 function formatDate(value) {
@@ -19,6 +21,39 @@ function formatDate(value) {
   return date.toLocaleString("ru-RU");
 }
 
+function formatPrice(value) {
+  if (value === null || value === undefined) {
+    return "Договорная";
+  }
+  const amount = Number(value);
+  if (Number.isNaN(amount)) {
+    return "Договорная";
+  }
+  return `${new Intl.NumberFormat("ru-RU").format(amount)} ₽`;
+}
+
+function getModerationLabel(status) {
+  if (status === "approved") return "Одобрено";
+  if (status === "rejected") return "Отклонено";
+  if (status === "pending") return "На модерации";
+  return status ?? "—";
+}
+
+function getReportStatusLabel(status) {
+  if (status === "blocked") return "Объявление заблокировано";
+  if (status === "rejected") return "Оставлено без блокировки";
+  if (status === "pending") return "Новая жалоба";
+  return status ?? "—";
+}
+
+function buildPendingReportsFingerprint(items) {
+  return items
+    .filter((report) => (report.status ?? "pending") === "pending")
+    .slice(0, 10)
+    .map((r) => `${r.id ?? r.listing_id}:${r.user_id ?? "0"}:${r.created_at}`)
+    .join("|");
+}
+
 function normalizeSlug(text) {
   return text
     .toLowerCase()
@@ -30,23 +65,29 @@ function normalizeSlug(text) {
 
 export function AdminPage() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
+  const [currentAdminId, setCurrentAdminId] = useState(null);
   const [isCheckingAccess, setIsCheckingAccess] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingAction, setPendingAction] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const [stats, setStats] = useState(null);
   const [usersData, setUsersData] = useState({ meta: null, items: [] });
   const [listingsData, setListingsData] = useState({ meta: null, items: [] });
   const [categoriesData, setCategoriesData] = useState({ meta: null, items: [] });
+  const [reportsData, setReportsData] = useState({ meta: null, items: [] });
+  const [activeTab, setActiveTab] = useState("users");
+  const [hasNewReports, setHasNewReports] = useState(false);
+  const [pendingReportsCount, setPendingReportsCount] = useState(0);
+  const lastReportsFingerprintRef = useRef("");
 
   const [userFilters, setUserFilters] = useState({ query: "", role: "all" });
   const [listingFilters, setListingFilters] = useState({
     isActive: "all",
     userId: "",
     categoryId: "",
+    moderation: "all",
   });
 
   const [newCategory, setNewCategory] = useState({ name: "", slug: "" });
@@ -84,6 +125,9 @@ export function AdminPage() {
     if (filters.isActive !== "all") {
       params.set("is_active", filters.isActive === "active" ? "true" : "false");
     }
+    if (filters.moderation !== "all") {
+      params.set("moderation_status", filters.moderation);
+    }
     if (filters.userId.trim()) {
       params.set("user_id", filters.userId.trim());
     }
@@ -100,6 +144,41 @@ export function AdminPage() {
     setCategoriesData(payload);
   }
 
+  function syncPendingReports(nextItems) {
+    const pendingCount = nextItems.filter((report) => (report.status ?? "pending") === "pending").length;
+    setPendingReportsCount(pendingCount);
+    return pendingCount;
+  }
+
+  async function loadReports() {
+    const payload = await apiRequest("/admin/reports?limit=100&offset=0");
+    setReportsData(payload);
+    const nextItems = payload?.items ?? [];
+    syncPendingReports(nextItems);
+    lastReportsFingerprintRef.current = buildPendingReportsFingerprint(nextItems);
+  }
+
+  function applyReportsPayload(payload, { markAsSeen = false } = {}) {
+    const nextItems = payload?.items ?? [];
+    syncPendingReports(nextItems);
+    const nextFingerprint = buildPendingReportsFingerprint(nextItems);
+
+    const previousFingerprint = lastReportsFingerprintRef.current;
+    if (
+      previousFingerprint &&
+      nextFingerprint &&
+      nextFingerprint !== previousFingerprint &&
+      !markAsSeen
+    ) {
+      setHasNewReports(true);
+      setActiveTab("reports");
+      showToast("Поступила новая жалоба — выберите действие", { type: "info" });
+    }
+
+    lastReportsFingerprintRef.current = nextFingerprint;
+    setReportsData(payload);
+  }
+
   function handleAuthError(requestError, fallbackMessage) {
     if (requestError instanceof ApiError && requestError.status === 401) {
       navigate("/login", { replace: true });
@@ -110,16 +189,14 @@ export function AdminPage() {
       return true;
     }
 
-    setError(requestError instanceof ApiError ? requestError.message : fallbackMessage);
+    showToast(requestError instanceof ApiError ? requestError.message : fallbackMessage, { type: "error" });
     return false;
   }
 
   async function refreshAll() {
-    setError("");
-    setSuccess("");
     setIsRefreshing(true);
     try {
-      await Promise.all([loadDashboard(), loadUsers(), loadListings(), loadCategories()]);
+      await Promise.all([loadDashboard(), loadUsers(), loadListings(), loadCategories(), loadReports()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось загрузить данные админки");
     } finally {
@@ -142,6 +219,7 @@ export function AdminPage() {
           navigate("/", { replace: true });
           return;
         }
+        setCurrentAdminId(me.id ?? null);
 
         await refreshAll();
       } catch (requestError) {
@@ -162,16 +240,50 @@ export function AdminPage() {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    if (isCheckingAccess) {
+      return undefined;
+    }
+
+    let mounted = true;
+
+    async function pollReports() {
+      try {
+        const payload = await apiRequest("/admin/reports?limit=100&offset=0");
+        if (!mounted) {
+          return;
+        }
+        applyReportsPayload(payload, { markAsSeen: activeTab === "reports" });
+      } catch {
+        // тихо: фоновое обновление
+      }
+    }
+
+    pollReports();
+    const interval = window.setInterval(pollReports, 3000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, [isCheckingAccess, activeTab]);
+
+  function openReportsTab() {
+    setActiveTab("reports");
+    setHasNewReports(false);
+  }
+
   async function handleRoleUpdate(userId, role) {
-    setError("");
-    setSuccess("");
+    if (currentAdminId === userId) {
+      showToast("Нельзя менять роль самому себе", { type: "info" });
+      return;
+    }
     setPendingAction(`user-role-${userId}`);
     try {
       await apiRequest(`/admin/users/${userId}/role`, {
         method: "PATCH",
         body: JSON.stringify({ role }),
       });
-      setSuccess("Роль пользователя обновлена");
+      showToast("Роль пользователя обновлена", { type: "success" });
       await Promise.all([loadUsers(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось обновить роль");
@@ -181,16 +293,18 @@ export function AdminPage() {
   }
 
   async function handleDeleteUser(userId) {
+    if (currentAdminId === userId) {
+      showToast("Нельзя удалить самого себя", { type: "info" });
+      return;
+    }
     if (!window.confirm("Удалить пользователя? Это действие нельзя отменить.")) {
       return;
     }
 
-    setError("");
-    setSuccess("");
     setPendingAction(`user-delete-${userId}`);
     try {
       await apiRequest(`/admin/users/${userId}`, { method: "DELETE" });
-      setSuccess("Пользователь удалён");
+      showToast("Пользователь удалён", { type: "success" });
       await Promise.all([loadUsers(), loadListings(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось удалить пользователя");
@@ -200,18 +314,32 @@ export function AdminPage() {
   }
 
   async function handleListingStatusUpdate(listingId, isActive) {
-    setError("");
-    setSuccess("");
     setPendingAction(`listing-status-${listingId}`);
     try {
       await apiRequest(`/admin/listings/${listingId}/status`, {
         method: "PATCH",
         body: JSON.stringify({ is_active: isActive }),
       });
-      setSuccess("Статус объявления обновлён");
+      showToast("Статус объявления обновлён", { type: "success" });
       await Promise.all([loadListings(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось обновить статус объявления");
+    } finally {
+      setPendingAction("");
+    }
+  }
+
+  async function handleListingModerationUpdate(listingId, moderationStatus) {
+    setPendingAction(`listing-moderation-${listingId}`);
+    try {
+      await apiRequest(`/admin/listings/${listingId}/moderation`, {
+        method: "PATCH",
+        body: JSON.stringify({ moderation_status: moderationStatus }),
+      });
+      showToast("Статус модерации обновлён", { type: "success" });
+      await Promise.all([loadListings(), loadDashboard()]);
+    } catch (requestError) {
+      handleAuthError(requestError, "Не удалось обновить модерацию");
     } finally {
       setPendingAction("");
     }
@@ -222,12 +350,10 @@ export function AdminPage() {
       return;
     }
 
-    setError("");
-    setSuccess("");
     setPendingAction(`listing-delete-${listingId}`);
     try {
       await apiRequest(`/admin/listings/${listingId}`, { method: "DELETE" });
-      setSuccess("Объявление удалено");
+      showToast("Объявление удалено", { type: "success" });
       await Promise.all([loadListings(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось удалить объявление");
@@ -242,16 +368,14 @@ export function AdminPage() {
     const slug = (newCategory.slug.trim() || normalizeSlug(name)).trim();
 
     if (!name) {
-      setError("Введите название категории");
+      showToast("Введите название категории", { type: "info" });
       return;
     }
     if (!slug) {
-      setError("Введите slug категории");
+      showToast("Введите slug категории", { type: "info" });
       return;
     }
 
-    setError("");
-    setSuccess("");
     setPendingAction("category-create");
     try {
       await apiRequest("/admin/categories", {
@@ -259,7 +383,7 @@ export function AdminPage() {
         body: JSON.stringify({ name, slug }),
       });
       setNewCategory({ name: "", slug: "" });
-      setSuccess("Категория создана");
+      showToast("Категория создана", { type: "success" });
       await Promise.all([loadCategories(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось создать категорию");
@@ -281,12 +405,10 @@ export function AdminPage() {
     const slug = editingCategory.slug.trim();
 
     if (!name || !slug) {
-      setError("Название и slug обязательны");
+      showToast("Название и slug обязательны", { type: "info" });
       return;
     }
 
-    setError("");
-    setSuccess("");
     setPendingAction(`category-edit-${categoryId}`);
     try {
       await apiRequest(`/admin/categories/${categoryId}`, {
@@ -294,7 +416,7 @@ export function AdminPage() {
         body: JSON.stringify({ name, slug }),
       });
       setEditingCategoryId(null);
-      setSuccess("Категория обновлена");
+      showToast("Категория обновлена", { type: "success" });
       await loadCategories();
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось обновить категорию");
@@ -308,12 +430,10 @@ export function AdminPage() {
       return;
     }
 
-    setError("");
-    setSuccess("");
     setPendingAction(`category-delete-${categoryId}`);
     try {
       await apiRequest(`/admin/categories/${categoryId}`, { method: "DELETE" });
-      setSuccess("Категория удалена");
+      showToast("Категория удалена", { type: "success" });
       await Promise.all([loadCategories(), loadListings(), loadDashboard()]);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось удалить категорию");
@@ -324,8 +444,6 @@ export function AdminPage() {
 
   async function applyUserFilters(event) {
     event.preventDefault();
-    setError("");
-    setSuccess("");
     try {
       await loadUsers(userFilters);
     } catch (requestError) {
@@ -335,12 +453,28 @@ export function AdminPage() {
 
   async function applyListingFilters(event) {
     event.preventDefault();
-    setError("");
-    setSuccess("");
     try {
       await loadListings(listingFilters);
     } catch (requestError) {
       handleAuthError(requestError, "Не удалось применить фильтры объявлений");
+    }
+  }
+
+  async function handleReportResolve(reportId, status) {
+    setPendingAction(`report-${status}-${reportId}`);
+    try {
+      await updateReportStatus(reportId, status);
+      showToast(
+        status === "blocked"
+          ? "Объявление заблокировано по жалобе"
+          : "Жалоба закрыта, объявление оставлено без изменений",
+        { type: "success" },
+      );
+      await Promise.all([loadReports(), loadListings(), loadDashboard()]);
+    } catch (requestError) {
+      handleAuthError(requestError, "Не удалось обновить жалобу");
+    } finally {
+      setPendingAction("");
     }
   }
 
@@ -365,9 +499,43 @@ export function AdminPage() {
           {isRefreshing ? "Обновляем..." : "Обновить данные"}
         </button>
       </div>
-
-      {error ? <p className="admin-feedback admin-feedback--error">{error}</p> : null}
-      {success ? <p className="admin-feedback admin-feedback--success">{success}</p> : null}
+      <nav className="admin-tabs" aria-label="Разделы админки">
+        <button
+          type="button"
+          className={activeTab === "users" ? "active" : ""}
+          onClick={() => setActiveTab("users")}
+        >
+          Пользователи
+        </button>
+        <button
+          type="button"
+          className={activeTab === "listings" ? "active" : ""}
+          onClick={() => setActiveTab("listings")}
+        >
+          Объявления
+        </button>
+        <button
+          type="button"
+          className={activeTab === "categories" ? "active" : ""}
+          onClick={() => setActiveTab("categories")}
+        >
+          Категории
+        </button>
+        <button
+          type="button"
+          className={`admin-tabs__item${activeTab === "reports" ? " active" : ""}`}
+          onClick={openReportsTab}
+        >
+          Жалобы
+          {pendingReportsCount > 0 ? (
+            <span className="admin-tabs__badge" aria-label={`Жалоб на рассмотрении: ${pendingReportsCount}`}>
+              {pendingReportsCount > 99 ? "99+" : pendingReportsCount}
+            </span>
+          ) : hasNewReports ? (
+            <span className="admin-tabs__dot" aria-label="Новые жалобы" />
+          ) : null}
+        </button>
+      </nav>
 
       <section className="admin-card">
         <h2>Сводка</h2>
@@ -395,7 +563,8 @@ export function AdminPage() {
         </div>
       </section>
 
-      <section className="admin-card">
+      {activeTab === "users" ? (
+        <section className="admin-card">
         <h2>Пользователи</h2>
         <form className="admin-filters" onSubmit={applyUserFilters}>
           <input
@@ -412,11 +581,11 @@ export function AdminPage() {
             <option value="user">Только user</option>
             <option value="admin">Только admin</option>
           </select>
-          <button type="submit">Применить</button>
+          <button type="submit" className="admin-btn admin-btn--primary">Применить</button>
         </form>
         <p className="admin-meta">Найдено: {usersData?.meta?.total ?? 0}</p>
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="admin-table-wrap admin-table-wrap--stackable">
+          <table className="admin-table admin-table--stackable">
             <thead>
               <tr>
                 <th>ID</th>
@@ -430,26 +599,27 @@ export function AdminPage() {
             <tbody>
               {usersData.items.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.id}</td>
-                  <td>{`${user.name} ${user.last_name}`}</td>
-                  <td>{user.email}</td>
-                  <td>{user.role}</td>
-                  <td>{formatDate(user.created_at)}</td>
-                  <td className="admin-actions">
+                  <td data-label="ID">{user.id}</td>
+                  <td data-label="Имя">{`${user.name} ${user.last_name}`}</td>
+                  <td data-label="Email">{user.email}</td>
+                  <td data-label="Роль">{user.role}</td>
+                  <td data-label="Создан">{formatDate(user.created_at)}</td>
+                  <td className="admin-actions" data-label="Действия">
                     <button
                       type="button"
-                      disabled={pendingAction === `user-role-${user.id}`}
+                      className="admin-btn admin-btn--primary"
+                      disabled={pendingAction === `user-role-${user.id}` || currentAdminId === user.id}
                       onClick={() => handleRoleUpdate(user.id, user.role === "admin" ? "user" : "admin")}
                     >
                       {user.role === "admin" ? "Сделать user" : "Сделать admin"}
                     </button>
                     <button
                       type="button"
-                      className="danger"
-                      disabled={pendingAction === `user-delete-${user.id}`}
+                      className="admin-btn admin-btn--danger"
+                      disabled={pendingAction === `user-delete-${user.id}` || currentAdminId === user.id}
                       onClick={() => handleDeleteUser(user.id)}
                     >
-                      Удалить
+                      {currentAdminId === user.id ? "Это вы" : "Удалить"}
                     </button>
                   </td>
                 </tr>
@@ -465,8 +635,10 @@ export function AdminPage() {
           </table>
         </div>
       </section>
+      ) : null}
 
-      <section className="admin-card">
+      {activeTab === "listings" ? (
+        <section className="admin-card">
         <h2>Объявления</h2>
         <form className="admin-filters" onSubmit={applyListingFilters}>
           <select
@@ -478,6 +650,15 @@ export function AdminPage() {
             <option value="all">Все статусы</option>
             <option value="active">Только активные</option>
             <option value="inactive">Только неактивные</option>
+          </select>
+          <select
+            value={listingFilters.moderation}
+            onChange={(event) => setListingFilters((prev) => ({ ...prev, moderation: event.target.value }))}
+          >
+            <option value="all">Вся модерация</option>
+            <option value="pending">На модерации</option>
+            <option value="approved">Одобрено</option>
+            <option value="rejected">Отклонено</option>
           </select>
           <input
             type="number"
@@ -495,65 +676,74 @@ export function AdminPage() {
               setListingFilters((prev) => ({ ...prev, categoryId: event.target.value }))
             }
           />
-          <button type="submit">Применить</button>
+          <button type="submit" className="admin-btn admin-btn--primary">Применить</button>
         </form>
         <p className="admin-meta">Найдено: {listingsData?.meta?.total ?? 0}</p>
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Заголовок</th>
-                <th>Цена</th>
-                <th>Автор</th>
-                <th>Категория</th>
-                <th>Статус</th>
-                <th>Создано</th>
-                <th>Действия</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listingsData.items.map((listing) => (
-                <tr key={listing.id}>
-                  <td>{listing.id}</td>
-                  <td>{listing.title}</td>
-                  <td>{listing.price ?? "—"}</td>
-                  <td>{listing.user_id}</td>
-                  <td>{listing.category_id ?? "—"}</td>
-                  <td>{listing.is_active ? "active" : "inactive"}</td>
-                  <td>{formatDate(listing.created_at)}</td>
-                  <td className="admin-actions">
-                    <button
-                      type="button"
-                      disabled={pendingAction === `listing-status-${listing.id}`}
-                      onClick={() => handleListingStatusUpdate(listing.id, !listing.is_active)}
-                    >
-                      {listing.is_active ? "Деактивировать" : "Активировать"}
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      disabled={pendingAction === `listing-delete-${listing.id}`}
-                      onClick={() => handleDeleteListing(listing.id)}
-                    >
-                      Удалить
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {listingsData.items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="admin-empty">
-                    Объявления не найдены
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+        <div className="admin-listings-list">
+          {listingsData.items.map((listing) => {
+            const isOwnListing = currentAdminId !== null && listing.user_id === currentAdminId;
+            const moderationLabel = getModerationLabel(listing.moderation_status);
+
+            return (
+              <article key={listing.id} className="admin-listing-card">
+                <Link to={`/ads/${listing.id}`} className="admin-listing-card__main">
+                  <div className="admin-listing-card__thumb">
+                    {listing.image_url ? <img src={listing.image_url} alt="" /> : <span>📷</span>}
+                  </div>
+                  <div className="admin-listing-card__meta">
+                    <h3>{listing.title}</h3>
+                    <p className="admin-listing-card__price">{formatPrice(listing.price)}</p>
+                    <p className="admin-listing-card__details">
+                      ID {listing.id} · Автор {listing.user_id} · {listing.is_active ? "Активно" : "Неактивно"} ·{" "}
+                      {moderationLabel}
+                    </p>
+                    <p className="admin-listing-card__date">{formatDate(listing.created_at)}</p>
+                  </div>
+                </Link>
+                <div className="admin-listing-card__actions">
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    disabled={pendingAction === `listing-moderation-${listing.id}` || isOwnListing}
+                    onClick={() => handleListingModerationUpdate(listing.id, "approved")}
+                  >
+                    Одобрить
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--secondary"
+                    disabled={pendingAction === `listing-moderation-${listing.id}` || isOwnListing}
+                    onClick={() => handleListingModerationUpdate(listing.id, "rejected")}
+                  >
+                    Отклонить
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    disabled={pendingAction === `listing-status-${listing.id}`}
+                    onClick={() => handleListingStatusUpdate(listing.id, !listing.is_active)}
+                  >
+                    {listing.is_active ? "Деактивировать" : "Активировать"}
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--danger"
+                    disabled={pendingAction === `listing-delete-${listing.id}`}
+                    onClick={() => handleDeleteListing(listing.id)}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+          {listingsData.items.length === 0 ? <p className="admin-empty">Объявления не найдены</p> : null}
         </div>
       </section>
+      ) : null}
 
-      <section className="admin-card">
+      {activeTab === "categories" ? (
+        <section className="admin-card">
         <h2>Категории</h2>
         <form className="admin-filters" onSubmit={handleCreateCategory}>
           <input
@@ -574,13 +764,13 @@ export function AdminPage() {
             value={newCategory.slug}
             onChange={(event) => setNewCategory((prev) => ({ ...prev, slug: event.target.value }))}
           />
-          <button type="submit" disabled={pendingAction === "category-create"}>
+          <button type="submit" className="admin-btn admin-btn--primary" disabled={pendingAction === "category-create"}>
             Создать
           </button>
         </form>
         <p className="admin-meta">Всего: {categoriesData?.meta?.total ?? 0}</p>
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="admin-table-wrap admin-table-wrap--stackable">
+          <table className="admin-table admin-table--stackable">
             <thead>
               <tr>
                 <th>ID</th>
@@ -594,8 +784,8 @@ export function AdminPage() {
                 const isEditing = editingCategoryId === category.id;
                 return (
                   <tr key={category.id}>
-                    <td>{category.id}</td>
-                    <td>
+                    <td data-label="ID">{category.id}</td>
+                    <td data-label="Название">
                       {isEditing ? (
                         <input
                           type="text"
@@ -608,7 +798,7 @@ export function AdminPage() {
                         category.name
                       )}
                     </td>
-                    <td>
+                    <td data-label="Slug">
                       {isEditing ? (
                         <input
                           type="text"
@@ -621,28 +811,29 @@ export function AdminPage() {
                         category.slug
                       )}
                     </td>
-                    <td className="admin-actions">
+                    <td className="admin-actions" data-label="Действия">
                       {isEditing ? (
                         <>
                           <button
                             type="button"
+                            className="admin-btn admin-btn--primary"
                             disabled={pendingAction === `category-edit-${category.id}`}
                             onClick={() => submitCategoryEdit(category.id)}
                           >
                             Сохранить
                           </button>
-                          <button type="button" onClick={() => setEditingCategoryId(null)}>
+                          <button type="button" className="admin-btn admin-btn--secondary" onClick={() => setEditingCategoryId(null)}>
                             Отмена
                           </button>
                         </>
                       ) : (
-                        <button type="button" onClick={() => startCategoryEdit(category)}>
+                        <button type="button" className="admin-btn admin-btn--secondary" onClick={() => startCategoryEdit(category)}>
                           Редактировать
                         </button>
                       )}
                       <button
                         type="button"
-                        className="danger"
+                        className="admin-btn admin-btn--danger"
                         disabled={pendingAction === `category-delete-${category.id}`}
                         onClick={() => handleDeleteCategory(category.id)}
                       >
@@ -663,6 +854,71 @@ export function AdminPage() {
           </table>
         </div>
       </section>
+      ) : null}
+
+      {activeTab === "reports" ? (
+        <section className="admin-card">
+          <h2>Жалобы</h2>
+          <p className="admin-meta">
+            Всего: {reportsData?.meta?.total ?? 0}. Для новой жалобы выберите «Оставить» или «Заблокировать».
+          </p>
+          <div className="admin-listings-list">
+            {reportsData.items.map((report, index) => {
+              const reportStatus = report.status ?? "pending";
+              const isPending = reportStatus === "pending";
+
+              return (
+              <article
+                key={report.id ?? `${report.listing_id}-${report.user_id}-${report.created_at}-${index}`}
+                className={`admin-listing-card${isPending ? " admin-listing-card--report-new" : ""}`}
+              >
+                <Link to={`/ads/${report.listing_id}`} className="admin-listing-card__main">
+                  <div className="admin-listing-card__thumb">
+                    {report.listing_image_url ? (
+                      <img src={report.listing_image_url} alt="" />
+                    ) : (
+                      <span>📷</span>
+                    )}
+                  </div>
+                  <div className="admin-listing-card__meta">
+                    <h3>{report.listing_title ?? `Объявление #${report.listing_id}`}</h3>
+                    <span className={`admin-report-status admin-report-status--${reportStatus}`}>
+                      {getReportStatusLabel(reportStatus)}
+                    </span>
+                    <p className="admin-listing-card__details">
+                      Объявление #{report.listing_id} · Жалобу отправил пользователь #{report.user_id ?? "—"}
+                    </p>
+                    <p className="admin-listing-card__details">Причина: {report.reason || "Не указана"}</p>
+                    <p className="admin-listing-card__date">{formatDate(report.created_at)}</p>
+                  </div>
+                </Link>
+                {isPending ? (
+                  <div className="admin-listing-card__actions admin-listing-card__actions--report">
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--secondary"
+                      disabled={pendingAction === `report-rejected-${report.id}`}
+                      onClick={() => handleReportResolve(report.id, "rejected")}
+                    >
+                      Оставить
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-btn admin-btn--danger"
+                      disabled={pendingAction === `report-blocked-${report.id}`}
+                      onClick={() => handleReportResolve(report.id, "blocked")}
+                    >
+                      Заблокировать
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+              );
+            })}
+            {reportsData.items.length === 0 ? <p className="admin-empty">Жалобы отсутствуют</p> : null}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

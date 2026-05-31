@@ -209,3 +209,38 @@
     min-height: 62vh;
   }
 }
+
+@media (max-width: 480px) {
+  .chat-page {
+    margin: 6px auto 20px;
+    padding: 8px 10px 20px;
+    gap: 10px;
+  }
+
+  .chat-sidebar,
+  .chat-thread {
+    border-radius: 12px;
+  }
+
+  .chat-sidebar {
+    padding: 12px;
+  }
+
+  .chat-thread__head,
+  .chat-thread__messages {
+    padding: 12px;
+  }
+
+  .chat-thread__form {
+    grid-template-columns: 1fr;
+    padding: 10px;
+  }
+
+  .chat-thread__send {
+    width: 100%;
+  }
+
+  .chat-bubble {
+    max-width: 90%;
+  }
+}

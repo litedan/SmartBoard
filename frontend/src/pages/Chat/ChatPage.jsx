@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { BackButton } from "../../components/Layout/BackButton";
 import { Button } from "../../components/UI/Button";
 import { Breadcrumbs } from "../../components/Layout/Breadcrumbs";
+import { useToast } from "../../components/UI/ToastProvider";
 import { fetchAdById } from "../../shared/api/ads";
 import { ApiError, apiRequest } from "../../shared/api/client";
 import {
@@ -48,6 +49,7 @@ function mergeConversation(list, conversation) {
 
 export function ChatPage() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const listingIdFromQuery = Number(searchParams.get("listingId") || "");
   const conversationIdFromQuery = Number(searchParams.get("conversationId") || "");
@@ -135,6 +137,7 @@ export function ChatPage() {
         navigate("/login", { replace: true });
         return;
       }
+      showToast(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить чаты", { type: "error" });
       setError(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить чаты");
     } finally {
       setIsLoadingConversations(false);
@@ -158,6 +161,7 @@ export function ChatPage() {
           navigate("/login", { replace: true });
           return;
         }
+        showToast(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить сообщения", { type: "error" });
         setError(requestError instanceof ApiError ? requestError.message : "Не удалось загрузить сообщения");
       } finally {
         setIsLoadingMessages(false);
@@ -263,8 +267,10 @@ export function ChatPage() {
           return;
         }
         if (requestError instanceof ApiError && requestError.status === 404) {
+          showToast(requestError.message || "По этому объявлению пока нет переписки", { type: "info" });
           setError(requestError.message || "По этому объявлению пока нет переписки");
         } else {
+          showToast(requestError instanceof ApiError ? requestError.message : "Не удалось открыть чат", { type: "error" });
           setError(requestError instanceof ApiError ? requestError.message : "Не удалось открыть чат");
         }
       }
@@ -353,6 +359,7 @@ export function ChatPage() {
     }
 
     if (!socketRef.current?.isOpen()) {
+      showToast("Нет соединения с чатом. Обновите страницу.", { type: "error" });
       setError("Нет соединения с чатом. Обновите страницу.");
       return;
     }
@@ -363,6 +370,7 @@ export function ChatPage() {
       setMessageText("");
       setError("");
     } catch (requestError) {
+      showToast(requestError.message || "Не удалось отправить сообщение", { type: "error" });
       setError(requestError.message || "Не удалось отправить сообщение");
     } finally {
       setIsSending(false);
@@ -464,7 +472,6 @@ export function ChatPage() {
           )}
         </section>
       </section>
-      {error ? <p className="chat-global-error">{error}</p> : null}
     </>
   );
 }

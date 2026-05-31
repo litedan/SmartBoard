@@ -75,3 +75,20 @@
 .user-status--error {
   color: #9f2121;
 }
+
+@media (max-width: 480px) {
+  .user-page {
+    padding: 12px 10px 24px;
+    gap: 10px;
+  }
+
+  .user-card {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .user-card h1,
+  .user-card h2 {
+    font-size: 20px;
+  }
+}

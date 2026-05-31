@@ -15,6 +15,22 @@ class AdminDashboardStats(BaseModel):
     categories_total: int
 
 
+class AdminReportRead(BaseModel):
+    id: str | None = None
+    listing_id: int
+    user_id: int | None
+    reason: str
+    created_at: datetime
+    status: str = "pending"
+    resolved_at: datetime | None = None
+    listing_title: str | None = None
+    listing_image_url: str | None = None
+
+
+class AdminReportStatusUpdate(BaseModel):
+    status: str = Field(..., min_length=1, max_length=20)
+
+
 class AdminListMeta(BaseModel):
     total: int
     limit: int
@@ -32,6 +48,8 @@ class AdminListingRead(BaseModel):
     user_id: int
     category_id: int | None
     is_active: bool
+    moderation_status: str | None = None
+    moderated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime | None
 
@@ -59,12 +77,21 @@ class AdminCategoriesListResponse(BaseModel):
     items: list[AdminCategoryRead]
 
 
+class AdminReportsListResponse(BaseModel):
+    meta: AdminListMeta
+    items: list[AdminReportRead]
+
+
 class AdminUserRoleUpdate(BaseModel):
     role: UserRole
 
 
 class AdminListingStatusUpdate(BaseModel):
     is_active: bool
+
+
+class AdminListingModerationUpdate(BaseModel):
+    moderation_status: str = Field(..., min_length=1, max_length=20)
 
 
 class AdminCategoryCreate(BaseModel):

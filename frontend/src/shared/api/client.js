@@ -50,6 +50,9 @@ export async function apiRequest(endpoint, init = {}) {
   const payload = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("smartboard:unauthorized", { detail: { endpoint } }));
+    }
     const message = isJson
       ? getErrorMessage(payload)
       : typeof payload === "string" && payload.trim().length > 0

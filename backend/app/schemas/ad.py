@@ -62,6 +62,7 @@ class AdRead(BaseModel):
     author_created_at: datetime | None = None
     is_favorite: bool = False
     is_active: bool
+    moderation_status: str | None = None
     created_at: datetime
     updated_at: datetime | None
 

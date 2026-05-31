@@ -17,6 +17,8 @@ const INITIAL_FORM = {
   quantityAvailable: "1",
 };
 
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 export function AdCreateEditPage() {
   const navigate = useNavigate();
   const { adId } = useParams();
@@ -34,6 +36,7 @@ export function AdCreateEditPage() {
   const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   useEffect(() => {
     let mounted = true;
@@ -126,38 +129,47 @@ export function AdCreateEditPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function validate(nextForm, { includeQuantities } = {}) {
+    const nextErrors = {};
+    const title = nextForm.title.trim();
+    const description = nextForm.description.trim();
+
+    if (title.length < 3) nextErrors.title = "Минимум 3 символа";
+    if (description.length < 5) nextErrors.description = "Минимум 5 символов";
+
+    if (nextForm.price !== "" && nextForm.price !== null && nextForm.price !== undefined) {
+      const price = Number(nextForm.price);
+      if (Number.isNaN(price)) nextErrors.price = "Некорректная цена";
+      else if (price < 0) nextErrors.price = "Цена не может быть отрицательной";
+    }
+
+    if (includeQuantities) {
+      const quantityTotal = Number(nextForm.quantityTotal);
+      const quantityAvailable = Number(nextForm.quantityAvailable);
+      if (!Number.isInteger(quantityTotal) || quantityTotal < 1) nextErrors.quantityTotal = "Целое число ≥ 1";
+      if (!Number.isInteger(quantityAvailable) || quantityAvailable < 0) nextErrors.quantityAvailable = "Целое число ≥ 0";
+      if (Number.isInteger(quantityTotal) && Number.isInteger(quantityAvailable) && quantityAvailable > quantityTotal) {
+        nextErrors.quantityAvailable = "Остаток не может быть больше общего количества";
+      }
+    }
+
+    return nextErrors;
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
 
+    const nextFieldErrors = validate(form, { includeQuantities: isEditMode });
+    setFieldErrors(nextFieldErrors);
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setError("Проверьте поля формы");
+      return;
+    }
+
     const title = form.title.trim();
     const description = form.description.trim();
-
-    if (title.length < 3) {
-      setError("Заголовок должен быть не менее 3 символов");
-      return;
-    }
-    if (description.length < 5) {
-      setError("Описание должно быть не менее 5 символов");
-      return;
-    }
-    if (form.price && Number(form.price) < 0) {
-      setError("Цена не может быть отрицательной");
-      return;
-    }
     const quantityTotal = Number(form.quantityTotal);
     const quantityAvailable = Number(form.quantityAvailable);
-    if (!Number.isInteger(quantityTotal) || quantityTotal < 1) {
-      setError("Общее количество должно быть целым числом не меньше 1");
-      return;
-    }
-    if (!Number.isInteger(quantityAvailable) || quantityAvailable < 0) {
-      setError("Остаток должен быть целым числом не меньше 0");
-      return;
-    }
-    if (quantityAvailable > quantityTotal) {
-      setError("Остаток не может быть больше общего количества");
-      return;
-    }
 
     const payload = {
       title,
@@ -237,11 +249,12 @@ export function AdCreateEditPage() {
 
           <div className="ad-card__top">
           <span>{isEditMode ? "Редактирование" : "Новое объявление"}</span>
-          <span>SmartBoard</span>
         </div>
           <h1 className="ad-form__title">{isEditMode ? "Редактировать объявление" : "Создать объявление"}</h1>
           <p className="ad-form__hint">
-            {isEditMode ? "Измените нужные поля и сохраните." : "Заполните форму — объявление появится в каталоге."}
+            {isEditMode
+              ? "Измените нужные поля и сохраните."
+              : "Заполните форму — объявление уйдёт на модерацию и появится в каталоге после одобрения."}
           </p>
 
           {isEditMode ? (
@@ -256,23 +269,33 @@ export function AdCreateEditPage() {
             <input
               type="text"
               value={form.title}
-              onChange={(event) => updateField("title", event.target.value)}
+              onChange={(event) => {
+                const next = { ...form, title: event.target.value };
+                updateField("title", event.target.value);
+                setFieldErrors(validate(next, { includeQuantities: isEditMode }));
+              }}
               minLength={3}
               maxLength={200}
               required
             />
+            {fieldErrors.title ? <span className="ad-inline-error">{fieldErrors.title}</span> : null}
           </label>
 
           <label>
             Описание
             <textarea
               value={form.description}
-              onChange={(event) => updateField("description", event.target.value)}
+              onChange={(event) => {
+                const next = { ...form, description: event.target.value };
+                updateField("description", event.target.value);
+                setFieldErrors(validate(next, { includeQuantities: isEditMode }));
+              }}
               minLength={5}
               maxLength={5000}
               rows={6}
               required
             />
+            {fieldErrors.description ? <span className="ad-inline-error">{fieldErrors.description}</span> : null}
           </label>
 
           <div className="ad-form__row">
@@ -281,11 +304,16 @@ export function AdCreateEditPage() {
               <input
                 type="number"
                 value={form.price}
-                onChange={(event) => updateField("price", event.target.value)}
+                onChange={(event) => {
+                  const next = { ...form, price: event.target.value };
+                  updateField("price", event.target.value);
+                  setFieldErrors(validate(next, { includeQuantities: isEditMode }));
+                }}
                 min={0}
                 step="0.01"
                 placeholder="Например, 5000"
               />
+              {fieldErrors.price ? <span className="ad-inline-error">{fieldErrors.price}</span> : null}
             </label>
             <label>
               Категория
@@ -311,22 +339,34 @@ export function AdCreateEditPage() {
                 <input
                   type="number"
                   value={form.quantityTotal}
-                  onChange={(event) => updateField("quantityTotal", event.target.value)}
+                  onChange={(event) => {
+                    const next = { ...form, quantityTotal: event.target.value };
+                    updateField("quantityTotal", event.target.value);
+                    setFieldErrors(validate(next, { includeQuantities: true }));
+                  }}
                   min={1}
                   step={1}
                   required
                 />
+                {fieldErrors.quantityTotal ? <span className="ad-inline-error">{fieldErrors.quantityTotal}</span> : null}
               </label>
               <label>
                 Остаток
                 <input
                   type="number"
                   value={form.quantityAvailable}
-                  onChange={(event) => updateField("quantityAvailable", event.target.value)}
+                  onChange={(event) => {
+                    const next = { ...form, quantityAvailable: event.target.value };
+                    updateField("quantityAvailable", event.target.value);
+                    setFieldErrors(validate(next, { includeQuantities: true }));
+                  }}
                   min={0}
                   step={1}
                   required
                 />
+                {fieldErrors.quantityAvailable ? (
+                  <span className="ad-inline-error">{fieldErrors.quantityAvailable}</span>
+                ) : null}
               </label>
             </div>
           ) : null}
@@ -351,6 +391,12 @@ export function AdCreateEditPage() {
                 const nextFile = event.target.files?.[0] ?? null;
                 setError(null);
                 setSuccess(null);
+                if (nextFile && !ALLOWED_IMAGE_TYPES.has(nextFile.type)) {
+                  setImageFile(null);
+                  setError("Неподдерживаемый формат файла. Разрешены только JPG, PNG и WEBP.");
+                  event.target.value = "";
+                  return;
+                }
                 setImageFile(nextFile);
                 if (nextFile) {
                   setRemoveImage(false);
@@ -388,7 +434,7 @@ export function AdCreateEditPage() {
 
           <div className="ad-card__actions">
             <Button type="submit" variant="primary" loading={isSubmitting} disabled={isSubmitting}>
-              {isEditMode ? "Сохранить" : "Опубликовать"}
+              {isEditMode ? "Сохранить" : "Отправить на модерацию"}
             </Button>
             <Button to="/" variant="secondary">
               Выйти без сохранения

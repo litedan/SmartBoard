@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import "./home.css";
 
@@ -8,11 +9,12 @@ import { SearchFilters } from "../../components/Search/SearchFilters";
 import { apiRequest } from "../../shared/api/client";
 
 export function HomePage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({
-    query: "",
-    categoryId: "",
-    priceMin: "",
-    priceMax: "",
+    query: searchParams.get("query") ?? "",
+    categoryId: searchParams.get("categoryId") ?? "",
+    priceMin: searchParams.get("priceMin") ?? "",
+    priceMax: searchParams.get("priceMax") ?? "",
   });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -38,6 +40,41 @@ export function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    const nextFilters = {
+      query: searchParams.get("query") ?? "",
+      categoryId: searchParams.get("categoryId") ?? "",
+      priceMin: searchParams.get("priceMin") ?? "",
+      priceMax: searchParams.get("priceMax") ?? "",
+    };
+    setFilters((prev) =>
+      prev.query === nextFilters.query &&
+      prev.categoryId === nextFilters.categoryId &&
+      prev.priceMin === nextFilters.priceMin &&
+      prev.priceMax === nextFilters.priceMax
+        ? prev
+        : nextFilters,
+    );
+  }, [searchParams]);
+
+  function handleApplyFilters(nextFilters) {
+    setFilters(nextFilters);
+    const nextParams = new URLSearchParams();
+    if (nextFilters.query.trim()) {
+      nextParams.set("query", nextFilters.query.trim());
+    }
+    if (String(nextFilters.categoryId).trim()) {
+      nextParams.set("categoryId", String(nextFilters.categoryId).trim());
+    }
+    if (String(nextFilters.priceMin).trim()) {
+      nextParams.set("priceMin", String(nextFilters.priceMin).trim());
+    }
+    if (String(nextFilters.priceMax).trim()) {
+      nextParams.set("priceMax", String(nextFilters.priceMax).trim());
+    }
+    setSearchParams(nextParams, { replace: true });
+  }
+
   return (
     <section className="home-page">
       <div className="home-hero-compact">
@@ -61,7 +98,7 @@ export function HomePage() {
         </div>
       </div>
 
-      <SearchFilters value={filters} onApply={setFilters} />
+      <SearchFilters value={filters} onApply={handleApplyFilters} />
       <AdsFeed filters={filters} />
     </section>
   );

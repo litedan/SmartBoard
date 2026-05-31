@@ -81,17 +81,7 @@ async def update_my_profile(
     if user_data.phone is not None:
         update_payload["phone"] = user_data.phone
 
-    if user_data.current_password is not None or user_data.new_password is not None:
-        if not user_data.current_password or not user_data.new_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Для смены пароля передайте текущий и новый пароль",
-            )
-        if not verify_password(user_data.current_password, current_user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Текущий пароль указан неверно",
-            )
+    if user_data.new_password is not None:
         update_payload["hashed_password"] = hash_password(user_data.new_password)
 
     if not update_payload:
@@ -143,5 +133,22 @@ async def upload_my_avatar(
         session=db,
         obj=current_user,
         avatar_url=f"/media/avatars/{filename}",
+    )
+    return UserRead.model_validate(updated_user)
+
+
+@router.delete("/me/avatar", response_model=UserRead)
+async def delete_my_avatar(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_from_session),
+):
+    old_avatar_path = _extract_old_avatar_path(current_user.avatar_url)
+    if old_avatar_path and old_avatar_path.exists() and old_avatar_path.is_file():
+        old_avatar_path.unlink(missing_ok=True)
+
+    updated_user = await UserRepository.update(
+        session=db,
+        obj=current_user,
+        avatar_url=None,
     )
     return UserRead.model_validate(updated_user)
